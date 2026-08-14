@@ -31,6 +31,8 @@ Swagger UI + JSON을 Pages로 배포
 | `scripts/mint_jwt.py` | auth의 `/v3/api-docs`가 인증에 걸려 있어, CI가 정한 시크릿으로 토큰을 직접 서명한다 |
 | `scripts/postprocess.py` | 내부 API 제거 + 설명 주입 |
 | `site/index.html` | Swagger UI. 드롭다운으로 서버 4개를 고른다 |
+| `site/erd.html` | erdcloud풍 인터랙티브 ERD — 팬·줌·테이블 드래그. 데이터는 `gen_erd.py`가 실제 스키마에서 뽑은 `schema.json` |
+| `scripts/gen_erd.py` | Flyway 적용이 끝난 postgres에서 테이블·키·코멘트를 읽는다 |
 
 ## 알아둘 것
 
