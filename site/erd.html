@@ -5,66 +5,82 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PokeClip DB ERD</title>
   <style>
-    /* erdcloud를 따라 어두운 캔버스에 초록 테이블로 고정한다.
-       (erdcloud.com의 공개 ERD들 — 진초록 헤더바, 행마다 키 아이콘,
-        타입·NULL 열, 연어색 관계선 — 을 참고했다) */
+    /* erdcloud풍 인터랙티브 캔버스 — 빈 곳 드래그로 이동, 휠로 확대/축소,
+       테이블은 개별로 끌어 배치한다(위치는 localStorage에 남는다). */
     :root {
-      --canvas: #3b3b3b; --panel: #2f2f2f; --fg: #e8e8e8; --muted: #9aa;
-      --tbl: #2e5c47; --tbl-head: #1f4634; --tbl-line: #27503d;
-      --row-alt: #2a5641; --accent: #7fc98a; --rel: #e8927c;
-      --pk: #ffd54f; --fk: #f48fb1; --uk: #80cbc4;
+      --canvas: #333; --panel: #2a2a2a; --fg: #e8e8e8; --muted: #9aa;
+      --tbl: #1e1e1e; --tbl-head: #141414; --tbl-line: #2e2e2e;
+      --accent: #7fc98a; --rel: #e8927c;
+      --pk: #ffc94d; --fk: #f48fb1; --type: #e57373; --ko: #9fc2ab;
     }
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body { margin: 0; background: var(--canvas); color: var(--fg);
-           font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-    header { display: flex; align-items: baseline; gap: 1rem;
-             padding: .9rem 1.5rem; background: var(--panel);
-             border-bottom: 1px solid #222; }
-    header h1 { font-size: 1.1rem; margin: 0; }
+           font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+           display: flex; flex-direction: column; overflow: hidden; }
+    header { display: flex; align-items: baseline; gap: 1rem; flex: none;
+             padding: .8rem 1.5rem; background: var(--panel);
+             border-bottom: 1px solid #1c1c1c; z-index: 5; }
+    header h1 { font-size: 1.05rem; margin: 0; }
     header nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
     header nav a.on { color: var(--accent); font-weight: 700; }
-    main { max-width: 1150px; margin: 0 auto; padding: 1.5rem; }
-    #diagram { background: var(--panel); border: 1px solid #222;
-               border-radius: 10px; padding: 1rem; overflow-x: auto; }
-    #diagram svg { max-width: none; }
-    /* mermaid v11이 홀수 행 색을 mainBkg에서 "밝게" 계산하다 명도 100%
-       (= 흰색)를 만들어 path의 fill 속성에 박는다. themeVariables로는 못
-       고치고, 인라인 SVG라 페이지 CSS가 속성값을 이기는 것을 이용해 자식
-       path를 직접 덮는다. fill="none"인 path는 테두리라 건드리지 않는다. */
-    #diagram .row-rect-odd  path:not([fill="none"]) { fill: #2e5c47 !important; }
-    #diagram .row-rect-even path:not([fill="none"]) { fill: #27503d !important; }
-    #diagram svg text, #diagram .nodeLabel { fill: #e8e8e8; color: #e8e8e8; }
-    .note { color: var(--muted); font-size: .84rem; margin: .8rem 0 2rem; }
+    header .hint { margin-left: auto; color: var(--muted); font-size: .75rem; }
 
-    /* ── erdcloud풍 테이블 카드 ── */
-    #tables { display: grid; grid-template-columns: 1fr; gap: 1.3rem; }
-    .tbl { background: var(--tbl); border: 1px solid var(--tbl-head);
-           border-radius: 8px; overflow: hidden;
-           box-shadow: 0 3px 10px rgba(0,0,0,.35); }
-    .tbl > h2 { display: flex; align-items: baseline; gap: .6rem;
-                font-size: .95rem; margin: 0; padding: .6rem .9rem;
-                background: var(--tbl-head); color: #fff; }
-    .tbl > h2 .ko { font-size: .8rem; font-weight: 400; color: #cde3d3; }
-    .tbl > h2 small { margin-left: auto; font-weight: 400; font-size: .72rem;
-                      color: #9fc2ab; max-width: 45%; text-align: right; }
-    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
-    th { text-align: left; padding: .38rem .9rem; color: #b9d4c2;
-         font-size: .72rem; font-weight: 600; letter-spacing: .04em;
-         border-bottom: 1px solid var(--tbl-line); }
-    td { padding: .4rem .9rem; border-top: 1px solid var(--tbl-line); }
-    tr:nth-child(even) td { background: var(--row-alt); }
-    td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-    td.keys { width: 5.4rem; white-space: nowrap; }
-    td.nn { width: 5rem; font-size: .76rem; }
-    td.nn .req { color: #ffab91; font-weight: 600; }
-    td.nn .opt { color: var(--muted); }
-    .k { display: inline-block; border-radius: 3px; padding: 0 .3rem;
-         font-size: .68rem; font-weight: 800; margin-right: .2rem;
-         background: rgba(0,0,0,.35); }
-    .k.pk { color: var(--pk); }  .k.fk { color: var(--fk); }
-    .k.uk, .k.uks { color: var(--uk); }
-    .ref { color: var(--fk); font-size: .76rem; }
-    td.cmt { color: #d4e6da; max-width: 26rem; font-size: .8rem; }
+    #viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; }
+    #viewport.panning { cursor: grabbing; }
+    #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+    #edges { position: absolute; top: 0; left: 0; overflow: visible;
+             pointer-events: none; }
+    #edges path { stroke: var(--rel); stroke-width: 1.3; fill: none;
+                  stroke-dasharray: 5 4; }
+    #edges .end { stroke: var(--rel); stroke-width: 1.3; stroke-dasharray: none; }
+    #edges text { fill: var(--rel); font-size: 11px;
+                  font-family: ui-monospace, Menlo, monospace; }
+
+    /* ── 테이블 상자 (erdcloud풍) ── */
+    .tbl { position: absolute; width: 380px; background: var(--tbl);
+           border: 1px solid #000; border-radius: 4px; user-select: none;
+           box-shadow: 0 4px 14px rgba(0,0,0,.45); font-size: 12px; }
+    .tbl.dragging { box-shadow: 0 8px 22px rgba(0,0,0,.6); z-index: 3; }
+    .tbl h2 { display: flex; align-items: baseline; margin: 0; cursor: move;
+              padding: .45rem .7rem; background: var(--tbl-head);
+              border-bottom: 1px solid #000; border-radius: 4px 4px 0 0;
+              font-size: .82rem; color: #fff; }
+    .tbl h2 .ko { margin-left: auto; font-weight: 400; font-size: .72rem;
+                  color: var(--ko); }
+    .row { display: grid; grid-template-columns: 26px 1fr 1fr 92px;
+           align-items: center; gap: 0 .4rem; padding: .28rem .55rem;
+           border-top: 1px solid var(--tbl-line); }
+    .row:nth-child(even) { background: #232323; }
+    .key { font-size: .62rem; font-weight: 800; text-align: center; }
+    .key.pk { color: var(--pk); } .key.fk { color: var(--fk); }
+    .key.uk { color: #80cbc4; }
+    .nm { font-family: ui-monospace, "SF Mono", Menlo, monospace;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nm.nn::after { content: "*"; color: var(--type); }  /* NOT NULL 표시 */
+    .ko2 { color: var(--ko); font-size: .72rem; white-space: nowrap;
+           overflow: hidden; text-overflow: ellipsis; }
+    .ty { font-family: ui-monospace, Menlo, monospace; color: var(--type);
+          font-size: .72rem; text-align: right; white-space: nowrap; }
+
+    /* ── 메모 (erdcloud의 초록 스티키) ── */
+    .memo { position: absolute; width: 260px; padding: .6rem .7rem;
+            background: #35b596; color: #06382c; border-radius: 3px;
+            font-size: .74rem; line-height: 1.45; cursor: move; user-select: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+    .memo b { display: block; margin-bottom: .2rem; }
+
+    /* ── 조작 버튼 ── */
+    #ctl { position: absolute; left: 1rem; bottom: 1rem; z-index: 5;
+           display: flex; flex-direction: column; gap: .4rem; }
+    #ctl button { width: 34px; height: 34px; border: 1px solid #1c1c1c;
+                  border-radius: 6px; background: var(--panel); color: var(--fg);
+                  font-size: 1rem; cursor: pointer; }
+    #ctl button:hover { background: #3a3a3a; }
+    #legend { position: absolute; right: 1rem; bottom: 1rem; z-index: 5;
+              color: var(--muted); font-size: .72rem; background: var(--panel);
+              padding: .45rem .7rem; border-radius: 6px; border: 1px solid #1c1c1c; }
+    #legend .k { font-weight: 800; }
   </style>
 </head>
 <body>
@@ -74,41 +90,32 @@
     <a href="./index.html">API 명세</a>
     <a href="./erd.html" class="on">ERD</a>
   </nav>
+  <span class="hint">빈 곳 드래그 = 이동 · 휠 = 확대/축소 · 테이블 드래그 = 배치 (자동 저장)</span>
 </header>
-<main>
-  <div id="diagram">그리는 중…</div>
-  <p class="note">
-    Flyway 마이그레이션이 적용된 실제 스키마에서 자동 생성된다.
-    <span class="k uks">UK*</span>는 부분 유니크 인덱스 — 조건을 만족하는 행
-    안에서만 유일하다(예: 살아 있는 스트림키는 계정당 하나).
-    설명은 DB 컬럼 코멘트가 우선이고, 코멘트가 없는 컬럼은 이 페이지의
-    사전이 메운다.
-  </p>
-  <section id="tables"></section>
-</main>
+<div id="viewport">
+  <div id="world">
+    <svg id="edges" width="4000" height="3000"></svg>
+  </div>
+  <div id="ctl">
+    <button id="zin" title="확대">＋</button>
+    <button id="zout" title="축소">－</button>
+    <button id="fit" title="전체 보기">⤢</button>
+    <button id="reset" title="배치 초기화">↺</button>
+  </div>
+  <div id="legend">
+    <span class="k" style="color:var(--pk)">PK</span> 기본키 ·
+    <span class="k" style="color:var(--fk)">FK</span> 외래키 ·
+    <span class="k" style="color:#80cbc4">UK</span> 유니크
+    (<span class="k" style="color:#80cbc4">UK*</span> 부분) ·
+    <span style="color:var(--type)">이름*</span> = NOT NULL
+  </div>
+</div>
 
 <script type="module">
-  import mermaid from "https://unpkg.com/mermaid@11/dist/mermaid.esm.min.mjs";
-
-  // erdcloud풍 배색 — 진초록 상자, 연어색 관계선
-  mermaid.initialize({
-    startOnLoad: false, theme: "base", er: { useMaxWidth: false },
-    themeVariables: {
-      background: "#2f2f2f", mainBkg: "#2e5c47",
-      primaryColor: "#2e5c47", primaryTextColor: "#e8e8e8",
-      primaryBorderColor: "#1f4634", lineColor: "#e8927c",
-      tertiaryColor: "#1f4634", fontSize: "13px",
-      // 속성 행 배경 — 기본이 흰색이라 어두운 캔버스에서 뒤집힌다
-      attributeBackgroundColorOdd: "#2e5c47",
-      attributeBackgroundColorEven: "#27503d",
-    },
-  });
-
   // ── 한글 이름·설명 사전 ──
   // DB 컬럼 코멘트(V102 등)가 있으면 그쪽이 우선이다. 여기는 코멘트가 없는
-  // 컬럼을 메우는 사전으로, 2026-08-14에 마이그레이션·서비스 코드에서 확인한
-  // 사실만 적었다. 새 테이블이 생기면 사전에 없어도 페이지는 깨지지 않는다 —
-  // 설명 칸이 빌 뿐이다.
+  // 컬럼을 메우는 사전으로, 마이그레이션·서비스 코드에서 확인한 사실만 적었다.
+  // 새 테이블이 사전에 없어도 페이지는 깨지지 않는다 — 한글 칸이 빌 뿐이다.
   const TABLE_KO = {
     users: "회원",
     refresh_tokens: "갱신 토큰",
@@ -119,78 +126,216 @@
   };
   const COLUMN_KO = {
     "pairing_codes.id": "코드ID",
-    "pairing_codes.user_id": "회원ID — 코드를 발급받은 스트리머",
-    "pairing_codes.code_hash": "코드의 SHA-256 해시. 원문은 저장하지 않는다",
+    "pairing_codes.user_id": "회원ID — 발급받은 스트리머",
+    "pairing_codes.code_hash": "코드의 SHA-256 해시",
     "pairing_codes.expires_at": "만료일시 — 발급 후 10분",
-    "pairing_codes.used_at": "사용일시. NULL이면 미사용 — 한 번 쓰면 죽는다",
+    "pairing_codes.used_at": "사용일시. NULL이면 미사용",
     "pairing_codes.created_at": "발급일시",
     "pairing_exchange_attempts.id": "시도ID",
-    "pairing_exchange_attempts.client_ip_hash":
-      "요청 IP의 SHA-256 해시 — 교환 rate limit(IP당 분당 5회)의 키",
+    "pairing_exchange_attempts.client_ip_hash": "요청 IP의 SHA-256 해시",
     "pairing_exchange_attempts.attempted_at": "시도일시",
-    "secrets.ref": "비밀을 가리키는 참조 키. stream_keys가 이 값을 들고 있다",
+    "secrets.ref": "비밀을 가리키는 참조 키",
     "secrets.created_at": "등록일시",
     "stream_keys.id": "키ID",
-    "stream_keys.user_id": "회원ID — 키 주인. 살아 있는 키는 계정당 하나",
-    "stream_keys.streamid_hash": "streamid의 SHA-256 해시. 원문은 secrets에만 있다",
-    "stream_keys.passphrase_ref": "passphrase를 가리키는 secrets 참조",
+    "stream_keys.user_id": "회원ID — 키 주인",
+    "stream_keys.streamid_hash": "streamid의 SHA-256 해시",
+    "stream_keys.passphrase_ref": "passphrase의 secrets 참조",
     "stream_keys.created_at": "발급일시",
   };
-  const KEY_LABEL = { "PK": "pk", "FK": "fk", "UK": "uk", "UK*": "uks" };
+  // 처음 열었을 때의 배치. 여기 없는 새 테이블은 아래쪽에 자동으로 줄 세운다.
+  const DEFAULT_POS = {
+    users: [760, 420], refresh_tokens: [1300, 60], stream_keys: [1300, 460],
+    pairing_codes: [180, 60], pairing_exchange_attempts: [180, 470],
+    secrets: [180, 760],
+  };
+  const MEMOS = [
+    { at: [760, 130], head: "스트림키 비밀의 자리",
+      body: "streamid 원문·passphrase는 stream_keys에 없다 — secrets(AES-256-GCM)에만 있고 표에는 해시·참조뿐이다. 웹으로는 못 보고 페어링 코드 교환으로만 나간다." },
+    { at: [180, 950], head: "청소 작업 없음 (알려진 구멍)",
+      body: "pairing_codes·pairing_exchange_attempts는 지우는 작업이 아직 없다. 교환은 미인증이라 행이 계속 쌓인다 — 운영 전에 청소 작업이 필요하다." },
+  ];
 
+  const world = document.getElementById("world");
+  const viewport = document.getElementById("viewport");
+  const edges = document.getElementById("edges");
   const esc = s => String(s).replace(/[&<>"]/g,
       c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   const res = await fetch("specs/schema.json");
-  if (!res.ok) {
-    document.getElementById("diagram").textContent =
-      "schema.json이 아직 없다. Actions의 배포가 끝났는지 확인해라.";
-    throw new Error("no schema.json");
-  }
   const schema = await res.json();
-  const descOf = (t, c) => c.comment || COLUMN_KO[`${t.name}.${c.name}`] || "";
+  const koOf = (t, c) => c.comment || COLUMN_KO[`${t.name}.${c.name}`] || "";
 
-  // ── mermaid erDiagram — 이름·타입·키만. 설명은 아래 카드에 있다 ──
-  let mmd = "erDiagram\n";
+  // ── 위치: 기본 배치 + localStorage에 저장된 사용자 배치 ──
+  const LS = "pokeclip-erd-pos-v1";
+  const saved = JSON.parse(localStorage.getItem(LS) || "{}");
+  const pos = {};
+  let autoY = 1050;
   for (const t of schema.tables) {
-    mmd += `  ${t.name} {\n`;
-    for (const c of t.columns) {
-      const keys = c.keys.filter(k => k !== "UK*").join(",");
-      mmd += `    ${c.type} ${c.name}${keys ? " " + keys : ""}\n`;
-    }
-    mmd += "  }\n";
+    pos[t.name] = saved[t.name] || DEFAULT_POS[t.name] || [180, (autoY += 260) - 260];
   }
-  for (const r of schema.relations) {
-    const card = r.nullable ? "}o--o|" : "}o--||";
-    mmd += `  ${r.from} ${card} ${r.to} : "${r.column}"\n`;
-  }
-  const { svg } = await mermaid.render("erd", mmd);
-  document.getElementById("diagram").innerHTML = svg;
+  const savePos = () => localStorage.setItem(LS, JSON.stringify(pos));
 
-  // ── erdcloud풍 상세 카드 — 한글 설명 열 포함 ──
-  const cards = schema.tables.map(t => `
-    <div class="tbl">
-      <h2>${esc(t.name)}
-          ${TABLE_KO[t.name] ? `<span class="ko">${esc(TABLE_KO[t.name])}</span>` : ""}
-          ${t.comment ? `<small>${esc(t.comment)}</small>` : ""}</h2>
-      <table>
-        <thead><tr><th>키</th><th>컬럼</th><th>타입</th><th>NULL</th><th>설명</th></tr></thead>
-        <tbody>
-        ${t.columns.map(c => `
-          <tr>
-            <td class="keys">${c.keys.map(k =>
-                `<span class="k ${KEY_LABEL[k] || ""}">${esc(k)}</span>`).join("")}</td>
-            <td class="mono">${esc(c.name)}${c.ref ?
-                ` <span class="ref">→ ${esc(c.ref.table)}.${esc(c.ref.column)}</span>` : ""}</td>
-            <td class="mono">${esc(c.type)}</td>
-            <td class="nn">${c.nullable ? '<span class="opt">NULL</span>'
-                                        : '<span class="req">NOT NULL</span>'}</td>
-            <td class="cmt">${esc(descOf(t, c))}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </div>`);
-  document.getElementById("tables").innerHTML = cards.join("");
+  // ── 테이블 상자 ──
+  const boxes = {};   // name -> element
+  for (const t of schema.tables) {
+    const el = document.createElement("div");
+    el.className = "tbl";
+    el.dataset.name = t.name;
+    const keyMark = c =>
+      c.keys.includes("PK") ? '<span class="key pk">PK</span>' :
+      c.keys.includes("FK") ? '<span class="key fk">FK</span>' :
+      c.keys.includes("UK") ? '<span class="key uk">UK</span>' :
+      c.keys.includes("UK*") ? '<span class="key uk">UK*</span>' : "";
+    el.innerHTML = `
+      <h2 title="${esc(t.comment || "")}">${esc(t.name)}
+        <span class="ko">${esc(TABLE_KO[t.name] || "")}</span></h2>
+      ${t.columns.map(c => `
+        <div class="row" data-col="${esc(c.name)}" title="${esc(koOf(t, c))}">
+          ${keyMark(c)}
+          <span class="nm ${c.nullable ? "" : "nn"}"
+                style="grid-column:2">${esc(c.name)}</span>
+          <span class="ko2">${esc(koOf(t, c))}</span>
+          <span class="ty">${esc(c.type)}</span>
+        </div>`).join("")}`;
+    el.style.left = pos[t.name][0] + "px";
+    el.style.top = pos[t.name][1] + "px";
+    world.appendChild(el);
+    boxes[t.name] = el;
+  }
+
+  // ── 메모 ──
+  for (const m of MEMOS) {
+    const el = document.createElement("div");
+    el.className = "memo";
+    el.innerHTML = `<b>${esc(m.head)}</b>${esc(m.body)}`;
+    el.style.left = m.at[0] + "px";
+    el.style.top = m.at[1] + "px";
+    world.appendChild(el);
+  }
+
+  // ── 관계선: FK 행 옆구리 → 부모 상자 옆구리. 까마귀발(자식)·한 줄 막대(부모) ──
+  function anchor(el, rowSel) {
+    const x = el.offsetLeft, y = el.offsetTop,
+          w = el.offsetWidth, h = el.offsetHeight;
+    let ry = y + 16;                       // 기본: 헤더 높이쯤
+    if (rowSel) {
+      const row = el.querySelector(rowSel);
+      if (row) ry = y + row.offsetTop + row.offsetHeight / 2;
+    }
+    return { left: { x, y: ry }, right: { x: x + w, y: ry }, midY: y + h / 2 };
+  }
+  function drawEdges() {
+    let html = "";
+    for (const r of schema.relations) {
+      const child = boxes[r.from], parent = boxes[r.to];
+      if (!child || !parent) continue;
+      const a = anchor(child, `.row[data-col="${r.column}"]`);
+      const b = anchor(parent, null);
+      // 서로 마주 보는 옆구리를 고른다
+      const useRight = a.right.x < b.left.x - 20;
+      const useLeft = b.right.x < a.left.x - 20;
+      const p1 = useRight ? a.right : a.left;
+      const p2 = useRight ? b.left : (useLeft ? b.right : b.left);
+      const d1 = useRight ? 1 : -1;               // 자식에서 나가는 방향
+      const d2 = useRight ? -1 : (useLeft ? 1 : -1);
+      const c = 70;                                // 곡선 세기
+      html += `<path d="M ${p1.x} ${p1.y} C ${p1.x + c * d1} ${p1.y},
+                        ${p2.x + c * d2} ${p2.y}, ${p2.x} ${p2.y}"/>`;
+      // 자식 끝 까마귀발 (N쪽)
+      const fx = p1.x, fy = p1.y, s = 9 * d1;
+      html += `<path class="end" d="M ${fx + s} ${fy - 6} L ${fx} ${fy}
+                                    M ${fx + s} ${fy} L ${fx} ${fy}
+                                    M ${fx + s} ${fy + 6} L ${fx} ${fy}"/>`;
+      // 부모 끝 막대 (1쪽)
+      const bx = p2.x + 7 * d2;
+      html += `<path class="end" d="M ${bx} ${p2.y - 6} L ${bx} ${p2.y + 6}"/>`;
+      // 컬럼 라벨
+      const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2 - 6;
+      html += `<text x="${mx}" y="${my}" text-anchor="middle">${esc(r.column)}</text>`;
+    }
+    edges.innerHTML = html;
+  }
+  drawEdges();
+
+  // ── 뷰: 이동(팬) + 확대/축소 ──
+  const VS = "pokeclip-erd-view-v1";
+  let view = JSON.parse(localStorage.getItem(VS) || "null") || { x: 20, y: 20, z: .8 };
+  const apply = () => {
+    world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+    localStorage.setItem(VS, JSON.stringify(view));
+  };
+  apply();
+
+  const zoomAt = (sx, sy, factor) => {
+    const nz = Math.min(2.5, Math.max(.25, view.z * factor));
+    // 커서 아래의 월드 좌표가 그대로 있도록 팬을 보정한다
+    view.x = sx - (sx - view.x) * (nz / view.z);
+    view.y = sy - (sy - view.y) * (nz / view.z);
+    view.z = nz;
+    apply();
+  };
+  viewport.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = viewport.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  }, { passive: false });
+
+  document.getElementById("zin").onclick = () =>
+      zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.25);
+  document.getElementById("zout").onclick = () =>
+      zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1 / 1.25);
+  document.getElementById("fit").onclick = fit;
+  document.getElementById("reset").onclick = () => {
+    localStorage.removeItem(LS); localStorage.removeItem(VS);
+    location.reload();
+  };
+  function fit() {
+    const els = [...world.querySelectorAll(".tbl, .memo")];
+    const minX = Math.min(...els.map(e => e.offsetLeft)) - 40;
+    const minY = Math.min(...els.map(e => e.offsetTop)) - 40;
+    const maxX = Math.max(...els.map(e => e.offsetLeft + e.offsetWidth)) + 40;
+    const maxY = Math.max(...els.map(e => e.offsetTop + e.offsetHeight)) + 40;
+    view.z = Math.min(2, viewport.clientWidth / (maxX - minX),
+                         viewport.clientHeight / (maxY - minY));
+    view.x = -minX * view.z + (viewport.clientWidth - (maxX - minX) * view.z) / 2;
+    view.y = -minY * view.z + (viewport.clientHeight - (maxY - minY) * view.z) / 2;
+    apply();
+  }
+  if (!localStorage.getItem(VS)) fit();   // 처음 온 사람은 전체 보기로 시작
+
+  // ── 드래그: 테이블/메모 = 개별 이동, 빈 곳 = 팬 ──
+  let drag = null;
+  viewport.addEventListener("mousedown", e => {
+    const box = e.target.closest(".tbl, .memo");
+    if (box) {
+      drag = { el: box, sx: e.clientX, sy: e.clientY,
+               ox: box.offsetLeft, oy: box.offsetTop };
+      box.classList.add("dragging");
+    } else {
+      drag = { pan: true, sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y };
+      viewport.classList.add("panning");
+    }
+  });
+  window.addEventListener("mousemove", e => {
+    if (!drag) return;
+    if (drag.pan) {
+      view.x = drag.ox + e.clientX - drag.sx;
+      view.y = drag.oy + e.clientY - drag.sy;
+      apply();
+    } else {
+      const nx = drag.ox + (e.clientX - drag.sx) / view.z;
+      const ny = drag.oy + (e.clientY - drag.sy) / view.z;
+      drag.el.style.left = nx + "px";
+      drag.el.style.top = ny + "px";
+      if (drag.el.dataset.name) pos[drag.el.dataset.name] = [nx, ny];
+      drawEdges();
+    }
+  });
+  window.addEventListener("mouseup", () => {
+    if (drag && !drag.pan) { drag.el.classList.remove("dragging"); savePos(); }
+    viewport.classList.remove("panning");
+    drag = null;
+  });
 </script>
 </body>
 </html>
