@@ -1,0 +1,10 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PokeClip Chat Detector API",
+    "version": "v0",
+    "description": "하이라이트를 판별하는 서버(포트 8084). 아직 API가 없다."
+  },
+  "paths": {},
+  "components": {}
+}

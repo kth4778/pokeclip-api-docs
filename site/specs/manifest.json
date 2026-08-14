@@ -1,0 +1,18 @@
+[
+  {
+    "url": "specs/auth.json",
+    "name": "auth — 로그인·토큰·스트림키 (8082)"
+  },
+  {
+    "url": "specs/clip.json",
+    "name": "clip — 방송 세션·클립·승인 (8081)"
+  },
+  {
+    "url": "specs/chat-collector.json",
+    "name": "chat-collector — 치지직 채팅 수집 (8083)"
+  },
+  {
+    "url": "specs/chat-detector.json",
+    "name": "chat-detector — 하이라이트 판별 (8084)"
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PokeClip Clip API",
+    "version": "v0",
+    "description": "방송 세션·클립·승인을 담당하는 서버(포트 8081). 아직 API가 없다."
+  },
+  "paths": {},
+  "components": {}
+}

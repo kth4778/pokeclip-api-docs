@@ -1,0 +1,10 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PokeClip Chat Collector API",
+    "version": "v0",
+    "description": "치지직 채팅을 수집하는 서버(포트 8083). 수집은 나가는 연결이라 REST API가 없다."
+  },
+  "paths": {},
+  "components": {}
+}

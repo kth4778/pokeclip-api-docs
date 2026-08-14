@@ -1,0 +1,97 @@
+# pokeclip-mono의 서버 4개에서 OpenAPI 문서를 뽑아 GitHub Pages로 배포한다.
+#
+# mono 저장소는 읽기만 한다 — checkout해서 빌드할 뿐, 아무것도 push하지 않는다.
+# springdoc 의존성도 init.gradle로 빌드 순간에만 얹는다.
+#
+# 갱신 시점:
+#   - 매일 06:00 KST (cron은 UTC라 21:00)
+#   - Actions 탭에서 수동 실행 (Run workflow 버튼)
+#   - 이 레포의 main에 push될 때 (스크립트·화면을 고친 경우)
+name: API docs
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17 # mono의 docker-compose와 같은 메이저를 쓴다
+        env:
+          POSTGRES_USER: pokeclip
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: pokeclip
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pokeclip"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # 문서 추출용 더미다. 이 잡 안에서만 살고 어떤 실 환경과도 무관하다.
+      # auth는 이 여섯 개가 없으면 의도적으로 부팅을 거부한다.
+      POSTGRES_USER: pokeclip
+      POSTGRES_PASSWORD: ci-only
+      POSTGRES_DB: pokeclip
+      JWT_SECRET: ci-docs-extraction-only-not-a-real-secret!!
+      GOOGLE_CLIENT_ID: ci-dummy
+      GOOGLE_CLIENT_SECRET: ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      SECRET_STORE_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= # '0' 32개의 base64
+      INTERNAL_API_TOKEN: ci-dummy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: mono 저장소 checkout (읽기 전용)
+        uses: actions/checkout@v4
+        with:
+          repository: 3K-PokeClip/PokeClip-mono
+          path: mono
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 서버 4개 bootJar 빌드 (springdoc은 init.gradle로 주입)
+        working-directory: mono/services
+        run: >
+          ./gradlew -I "$GITHUB_WORKSPACE/init.gradle"
+          :auth:bootJar :clip:bootJar :chat-collector:bootJar :chat-detector:bootJar
+          -x test --no-daemon
+
+      - name: 문서 추출
+        run: bash scripts/extract.sh
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
