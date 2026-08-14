@@ -5,44 +5,66 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PokeClip DB ERD</title>
   <style>
+    /* erdcloud를 따라 어두운 캔버스에 초록 테이블로 고정한다.
+       (erdcloud.com의 공개 ERD들 — 진초록 헤더바, 행마다 키 아이콘,
+        타입·NULL 열, 연어색 관계선 — 을 참고했다) */
     :root {
-      --bg: #fafafa; --fg: #1a1a1a; --muted: #667; --card: #fff;
-      --line: #e2e2e8; --accent: #2e7d32; --chip: #eef4ee;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #16181d; --fg: #e6e6ea; --muted: #99a; --card: #1e2128;
-        --line: #33363f; --accent: #7fc98a; --chip: #263028;
-      }
+      --canvas: #3b3b3b; --panel: #2f2f2f; --fg: #e8e8e8; --muted: #9aa;
+      --tbl: #2e5c47; --tbl-head: #1f4634; --tbl-line: #27503d;
+      --row-alt: #2a5641; --accent: #7fc98a; --rel: #e8927c;
+      --pk: #ffd54f; --fk: #f48fb1; --uk: #80cbc4;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg);
+    body { margin: 0; background: var(--canvas); color: var(--fg);
            font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
     header { display: flex; align-items: baseline; gap: 1rem;
-             padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
-    header h1 { font-size: 1.15rem; margin: 0; }
+             padding: .9rem 1.5rem; background: var(--panel);
+             border-bottom: 1px solid #222; }
+    header h1 { font-size: 1.1rem; margin: 0; }
     header nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
     header nav a.on { color: var(--accent); font-weight: 700; }
-    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
-    #diagram { background: var(--card); border: 1px solid var(--line);
+    main { max-width: 1150px; margin: 0 auto; padding: 1.5rem; }
+    #diagram { background: var(--panel); border: 1px solid #222;
                border-radius: 10px; padding: 1rem; overflow-x: auto; }
-    /* 원래 크기로 두고 넘치면 가로 스크롤 — 축소하면 글자가 안 읽힌다 */
     #diagram svg { max-width: none; }
-    .note { color: var(--muted); font-size: .85rem; margin: .8rem 0 2rem; }
-    .tbl { background: var(--card); border: 1px solid var(--line);
-           border-radius: 10px; margin-bottom: 1.4rem; overflow: hidden; }
-    .tbl > h2 { font-size: 1rem; margin: 0; padding: .7rem 1rem;
-                border-bottom: 1px solid var(--line); }
-    .tbl > h2 small { color: var(--muted); font-weight: 400; margin-left: .6rem; }
-    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-    th, td { text-align: left; padding: .45rem .9rem; border-top: 1px solid var(--line); }
-    th { color: var(--muted); font-weight: 600; border-top: none; }
-    td.mono, th.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-    .k { display: inline-block; background: var(--chip); color: var(--accent);
-         border-radius: 4px; padding: 0 .35rem; font-size: .72rem; font-weight: 700;
-         margin-right: .25rem; }
-    .null { color: var(--muted); }
-    .cmt { color: var(--muted); max-width: 28rem; }
+    /* mermaid v11이 홀수 행 색을 mainBkg에서 "밝게" 계산하다 명도 100%
+       (= 흰색)를 만들어 path의 fill 속성에 박는다. themeVariables로는 못
+       고치고, 인라인 SVG라 페이지 CSS가 속성값을 이기는 것을 이용해 자식
+       path를 직접 덮는다. fill="none"인 path는 테두리라 건드리지 않는다. */
+    #diagram .row-rect-odd  path:not([fill="none"]) { fill: #2e5c47 !important; }
+    #diagram .row-rect-even path:not([fill="none"]) { fill: #27503d !important; }
+    #diagram svg text, #diagram .nodeLabel { fill: #e8e8e8; color: #e8e8e8; }
+    .note { color: var(--muted); font-size: .84rem; margin: .8rem 0 2rem; }
+
+    /* ── erdcloud풍 테이블 카드 ── */
+    #tables { display: grid; grid-template-columns: 1fr; gap: 1.3rem; }
+    .tbl { background: var(--tbl); border: 1px solid var(--tbl-head);
+           border-radius: 8px; overflow: hidden;
+           box-shadow: 0 3px 10px rgba(0,0,0,.35); }
+    .tbl > h2 { display: flex; align-items: baseline; gap: .6rem;
+                font-size: .95rem; margin: 0; padding: .6rem .9rem;
+                background: var(--tbl-head); color: #fff; }
+    .tbl > h2 .ko { font-size: .8rem; font-weight: 400; color: #cde3d3; }
+    .tbl > h2 small { margin-left: auto; font-weight: 400; font-size: .72rem;
+                      color: #9fc2ab; max-width: 45%; text-align: right; }
+    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    th { text-align: left; padding: .38rem .9rem; color: #b9d4c2;
+         font-size: .72rem; font-weight: 600; letter-spacing: .04em;
+         border-bottom: 1px solid var(--tbl-line); }
+    td { padding: .4rem .9rem; border-top: 1px solid var(--tbl-line); }
+    tr:nth-child(even) td { background: var(--row-alt); }
+    td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    td.keys { width: 5.4rem; white-space: nowrap; }
+    td.nn { width: 5rem; font-size: .76rem; }
+    td.nn .req { color: #ffab91; font-weight: 600; }
+    td.nn .opt { color: var(--muted); }
+    .k { display: inline-block; border-radius: 3px; padding: 0 .3rem;
+         font-size: .68rem; font-weight: 800; margin-right: .2rem;
+         background: rgba(0,0,0,.35); }
+    .k.pk { color: var(--pk); }  .k.fk { color: var(--fk); }
+    .k.uk, .k.uks { color: var(--uk); }
+    .ref { color: var(--fk); font-size: .76rem; }
+    td.cmt { color: #d4e6da; max-width: 26rem; font-size: .8rem; }
   </style>
 </head>
 <body>
@@ -57,9 +79,10 @@
   <div id="diagram">그리는 중…</div>
   <p class="note">
     Flyway 마이그레이션이 적용된 실제 스키마에서 자동 생성된다.
-    <span class="k">UK*</span>는 부분 유니크 인덱스 — 조건을 만족하는 행 안에서만
-    유일하다(예: 살아 있는 스트림키는 계정당 하나).
-    flyway 이력 테이블은 도메인이 아니라 뺐다.
+    <span class="k uks">UK*</span>는 부분 유니크 인덱스 — 조건을 만족하는 행
+    안에서만 유일하다(예: 살아 있는 스트림키는 계정당 하나).
+    설명은 DB 컬럼 코멘트가 우선이고, 코멘트가 없는 컬럼은 이 페이지의
+    사전이 메운다.
   </p>
   <section id="tables"></section>
 </main>
@@ -67,9 +90,53 @@
 <script type="module">
   import mermaid from "https://unpkg.com/mermaid@11/dist/mermaid.esm.min.mjs";
 
-  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral",
-                       er: { useMaxWidth: false } });
+  // erdcloud풍 배색 — 진초록 상자, 연어색 관계선
+  mermaid.initialize({
+    startOnLoad: false, theme: "base", er: { useMaxWidth: false },
+    themeVariables: {
+      background: "#2f2f2f", mainBkg: "#2e5c47",
+      primaryColor: "#2e5c47", primaryTextColor: "#e8e8e8",
+      primaryBorderColor: "#1f4634", lineColor: "#e8927c",
+      tertiaryColor: "#1f4634", fontSize: "13px",
+      // 속성 행 배경 — 기본이 흰색이라 어두운 캔버스에서 뒤집힌다
+      attributeBackgroundColorOdd: "#2e5c47",
+      attributeBackgroundColorEven: "#27503d",
+    },
+  });
+
+  // ── 한글 이름·설명 사전 ──
+  // DB 컬럼 코멘트(V102 등)가 있으면 그쪽이 우선이다. 여기는 코멘트가 없는
+  // 컬럼을 메우는 사전으로, 2026-08-14에 마이그레이션·서비스 코드에서 확인한
+  // 사실만 적었다. 새 테이블이 생기면 사전에 없어도 페이지는 깨지지 않는다 —
+  // 설명 칸이 빌 뿐이다.
+  const TABLE_KO = {
+    users: "회원",
+    refresh_tokens: "갱신 토큰",
+    stream_keys: "스트림키",
+    secrets: "비밀 저장소",
+    pairing_codes: "페어링 코드",
+    pairing_exchange_attempts: "페어링 교환 시도",
+  };
+  const COLUMN_KO = {
+    "pairing_codes.id": "코드ID",
+    "pairing_codes.user_id": "회원ID — 코드를 발급받은 스트리머",
+    "pairing_codes.code_hash": "코드의 SHA-256 해시. 원문은 저장하지 않는다",
+    "pairing_codes.expires_at": "만료일시 — 발급 후 10분",
+    "pairing_codes.used_at": "사용일시. NULL이면 미사용 — 한 번 쓰면 죽는다",
+    "pairing_codes.created_at": "발급일시",
+    "pairing_exchange_attempts.id": "시도ID",
+    "pairing_exchange_attempts.client_ip_hash":
+      "요청 IP의 SHA-256 해시 — 교환 rate limit(IP당 분당 5회)의 키",
+    "pairing_exchange_attempts.attempted_at": "시도일시",
+    "secrets.ref": "비밀을 가리키는 참조 키. stream_keys가 이 값을 들고 있다",
+    "secrets.created_at": "등록일시",
+    "stream_keys.id": "키ID",
+    "stream_keys.user_id": "회원ID — 키 주인. 살아 있는 키는 계정당 하나",
+    "stream_keys.streamid_hash": "streamid의 SHA-256 해시. 원문은 secrets에만 있다",
+    "stream_keys.passphrase_ref": "passphrase를 가리키는 secrets 참조",
+    "stream_keys.created_at": "발급일시",
+  };
+  const KEY_LABEL = { "PK": "pk", "FK": "fk", "UK": "uk", "UK*": "uks" };
 
   const esc = s => String(s).replace(/[&<>"]/g,
       c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -81,43 +148,44 @@
     throw new Error("no schema.json");
   }
   const schema = await res.json();
+  const descOf = (t, c) => c.comment || COLUMN_KO[`${t.name}.${c.name}`] || "";
 
-  // ── mermaid erDiagram 본문 조립 ──
-  // 컬럼 코멘트는 다이어그램에 넣지 않는다 — 상자 폭이 세 배로 벌어져
-  // 전체가 축소되고 글자가 안 읽힌다. 코멘트는 아래 상세 카드에 있다.
+  // ── mermaid erDiagram — 이름·타입·키만. 설명은 아래 카드에 있다 ──
   let mmd = "erDiagram\n";
   for (const t of schema.tables) {
     mmd += `  ${t.name} {\n`;
     for (const c of t.columns) {
-      const keys = c.keys.filter(k => k !== "UK*").join(",");   // mermaid는 PK,FK,UK만 안다
+      const keys = c.keys.filter(k => k !== "UK*").join(",");
       mmd += `    ${c.type} ${c.name}${keys ? " " + keys : ""}\n`;
     }
     mmd += "  }\n";
   }
   for (const r of schema.relations) {
-    // 자식 }o--|| 부모 (N:1). FK가 NULL 허용이면 부모 쪽을 o|로 늦춘다.
     const card = r.nullable ? "}o--o|" : "}o--||";
     mmd += `  ${r.from} ${card} ${r.to} : "${r.column}"\n`;
   }
-
   const { svg } = await mermaid.render("erd", mmd);
   document.getElementById("diagram").innerHTML = svg;
 
-  // ── 테이블 상세 카드 (컬럼 코멘트 포함 — 다이어그램보다 읽기 편하다) ──
+  // ── erdcloud풍 상세 카드 — 한글 설명 열 포함 ──
   const cards = schema.tables.map(t => `
     <div class="tbl">
-      <h2>${esc(t.name)}${t.comment ? `<small>${esc(t.comment)}</small>` : ""}</h2>
+      <h2>${esc(t.name)}
+          ${TABLE_KO[t.name] ? `<span class="ko">${esc(TABLE_KO[t.name])}</span>` : ""}
+          ${t.comment ? `<small>${esc(t.comment)}</small>` : ""}</h2>
       <table>
-        <thead><tr><th>키</th><th class="mono">컬럼</th><th class="mono">타입</th>
-                   <th>NULL</th><th>설명</th></tr></thead>
+        <thead><tr><th>키</th><th>컬럼</th><th>타입</th><th>NULL</th><th>설명</th></tr></thead>
         <tbody>
         ${t.columns.map(c => `
           <tr>
-            <td>${c.keys.map(k => `<span class="k">${esc(k)}</span>`).join("")}</td>
-            <td class="mono">${esc(c.name)}${c.ref ? ` <span class="null">→ ${esc(c.ref.table)}.${esc(c.ref.column)}</span>` : ""}</td>
+            <td class="keys">${c.keys.map(k =>
+                `<span class="k ${KEY_LABEL[k] || ""}">${esc(k)}</span>`).join("")}</td>
+            <td class="mono">${esc(c.name)}${c.ref ?
+                ` <span class="ref">→ ${esc(c.ref.table)}.${esc(c.ref.column)}</span>` : ""}</td>
             <td class="mono">${esc(c.type)}</td>
-            <td class="null">${c.nullable ? "허용" : ""}</td>
-            <td class="cmt">${esc(c.comment)}</td>
+            <td class="nn">${c.nullable ? '<span class="opt">NULL</span>'
+                                        : '<span class="req">NOT NULL</span>'}</td>
+            <td class="cmt">${esc(descOf(t, c))}</td>
           </tr>`).join("")}
         </tbody>
       </table>
