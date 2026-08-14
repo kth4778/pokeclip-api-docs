@@ -77,6 +77,10 @@ for entry in "${SERVERS[@]}"; do
   extract_one "$name" "$port" "$auth"
 done
 
+# ERD 데이터. auth가 위에서 한 번 떴으므로 이 시점의 postgres에는
+# V1xx 마이그레이션이 전부 적용돼 있다 — 그 실제 스키마를 읽는다.
+python3 scripts/gen_erd.py "$OUT/schema.json"
+
 # Swagger UI 드롭다운이 읽는 목록. 성공한 것만 여기 실리므로,
 # 위에서 하나라도 실패하면 여기까지 오지 않는다.
 python3 - "$OUT" <<'EOF'
