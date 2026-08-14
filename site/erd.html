@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PokeClip DB ERD</title>
+  <style>
+    :root {
+      --bg: #fafafa; --fg: #1a1a1a; --muted: #667; --card: #fff;
+      --line: #e2e2e8; --accent: #2e7d32; --chip: #eef4ee;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181d; --fg: #e6e6ea; --muted: #99a; --card: #1e2128;
+        --line: #33363f; --accent: #7fc98a; --chip: #263028;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+           font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+    header { display: flex; align-items: baseline; gap: 1rem;
+             padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
+    header h1 { font-size: 1.15rem; margin: 0; }
+    header nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
+    header nav a.on { color: var(--accent); font-weight: 700; }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    #diagram { background: var(--card); border: 1px solid var(--line);
+               border-radius: 10px; padding: 1rem; overflow-x: auto; }
+    /* 원래 크기로 두고 넘치면 가로 스크롤 — 축소하면 글자가 안 읽힌다 */
+    #diagram svg { max-width: none; }
+    .note { color: var(--muted); font-size: .85rem; margin: .8rem 0 2rem; }
+    .tbl { background: var(--card); border: 1px solid var(--line);
+           border-radius: 10px; margin-bottom: 1.4rem; overflow: hidden; }
+    .tbl > h2 { font-size: 1rem; margin: 0; padding: .7rem 1rem;
+                border-bottom: 1px solid var(--line); }
+    .tbl > h2 small { color: var(--muted); font-weight: 400; margin-left: .6rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th, td { text-align: left; padding: .45rem .9rem; border-top: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; border-top: none; }
+    td.mono, th.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .k { display: inline-block; background: var(--chip); color: var(--accent);
+         border-radius: 4px; padding: 0 .35rem; font-size: .72rem; font-weight: 700;
+         margin-right: .25rem; }
+    .null { color: var(--muted); }
+    .cmt { color: var(--muted); max-width: 28rem; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>PokeClip DB</h1>
+  <nav>
+    <a href="./index.html">API 명세</a>
+    <a href="./erd.html" class="on">ERD</a>
+  </nav>
+</header>
+<main>
+  <div id="diagram">그리는 중…</div>
+  <p class="note">
+    Flyway 마이그레이션이 적용된 실제 스키마에서 자동 생성된다.
+    <span class="k">UK*</span>는 부분 유니크 인덱스 — 조건을 만족하는 행 안에서만
+    유일하다(예: 살아 있는 스트림키는 계정당 하나).
+    flyway 이력 테이블은 도메인이 아니라 뺐다.
+  </p>
+  <section id="tables"></section>
+</main>
+
+<script type="module">
+  import mermaid from "https://unpkg.com/mermaid@11/dist/mermaid.esm.min.mjs";
+
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral",
+                       er: { useMaxWidth: false } });
+
+  const esc = s => String(s).replace(/[&<>"]/g,
+      c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const res = await fetch("specs/schema.json");
+  if (!res.ok) {
+    document.getElementById("diagram").textContent =
+      "schema.json이 아직 없다. Actions의 배포가 끝났는지 확인해라.";
+    throw new Error("no schema.json");
+  }
+  const schema = await res.json();
+
+  // ── mermaid erDiagram 본문 조립 ──
+  // 컬럼 코멘트는 다이어그램에 넣지 않는다 — 상자 폭이 세 배로 벌어져
+  // 전체가 축소되고 글자가 안 읽힌다. 코멘트는 아래 상세 카드에 있다.
+  let mmd = "erDiagram\n";
+  for (const t of schema.tables) {
+    mmd += `  ${t.name} {\n`;
+    for (const c of t.columns) {
+      const keys = c.keys.filter(k => k !== "UK*").join(",");   // mermaid는 PK,FK,UK만 안다
+      mmd += `    ${c.type} ${c.name}${keys ? " " + keys : ""}\n`;
+    }
+    mmd += "  }\n";
+  }
+  for (const r of schema.relations) {
+    // 자식 }o--|| 부모 (N:1). FK가 NULL 허용이면 부모 쪽을 o|로 늦춘다.
+    const card = r.nullable ? "}o--o|" : "}o--||";
+    mmd += `  ${r.from} ${card} ${r.to} : "${r.column}"\n`;
+  }
+
+  const { svg } = await mermaid.render("erd", mmd);
+  document.getElementById("diagram").innerHTML = svg;
+
+  // ── 테이블 상세 카드 (컬럼 코멘트 포함 — 다이어그램보다 읽기 편하다) ──
+  const cards = schema.tables.map(t => `
+    <div class="tbl">
+      <h2>${esc(t.name)}${t.comment ? `<small>${esc(t.comment)}</small>` : ""}</h2>
+      <table>
+        <thead><tr><th>키</th><th class="mono">컬럼</th><th class="mono">타입</th>
+                   <th>NULL</th><th>설명</th></tr></thead>
+        <tbody>
+        ${t.columns.map(c => `
+          <tr>
+            <td>${c.keys.map(k => `<span class="k">${esc(k)}</span>`).join("")}</td>
+            <td class="mono">${esc(c.name)}${c.ref ? ` <span class="null">→ ${esc(c.ref.table)}.${esc(c.ref.column)}</span>` : ""}</td>
+            <td class="mono">${esc(c.type)}</td>
+            <td class="null">${c.nullable ? "허용" : ""}</td>
+            <td class="cmt">${esc(c.comment)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`);
+  document.getElementById("tables").innerHTML = cards.join("");
+</script>
+</body>
+</html>

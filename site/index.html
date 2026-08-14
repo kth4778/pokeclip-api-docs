@@ -9,9 +9,16 @@
     body { margin: 0; }
     /* 상단 초록 바의 URL 입력칸은 숨긴다 — 드롭다운으로만 고른다 */
     .swagger-ui .topbar .download-url-wrapper .select-label { color: #fff; }
+    /* ERD 페이지로 가는 배지. Swagger 상단 바는 건드리지 않는다 */
+    .erd-link { position: fixed; right: 1rem; bottom: 1rem; z-index: 10;
+                background: #2e7d32; color: #fff; text-decoration: none;
+                padding: .55rem 1rem; border-radius: 999px; font-weight: 700;
+                font-family: sans-serif; font-size: .85rem;
+                box-shadow: 0 2px 8px rgba(0,0,0,.3); }
   </style>
 </head>
 <body>
+<a class="erd-link" href="./erd.html">DB ERD →</a>
 <div id="swagger-ui"></div>
 <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
 <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>

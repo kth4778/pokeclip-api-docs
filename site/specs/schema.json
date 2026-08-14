@@ -1,0 +1,378 @@
+{
+  "tables": [
+    {
+      "name": "pairing_codes",
+      "comment": "ADR-019: 8자 Crockford · 10분 만료 · 일회용. 청소 작업 없음(알려진 구멍)",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int8",
+          "nullable": false,
+          "default": "nextval('pairing_codes_id_seq'::regclass)",
+          "comment": "",
+          "keys": [
+            "PK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "user_id",
+          "type": "int8",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [
+            "FK"
+          ],
+          "ref": {
+            "table": "users",
+            "column": "id"
+          }
+        },
+        {
+          "name": "code_hash",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [
+            "UK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "used_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        }
+      ]
+    },
+    {
+      "name": "pairing_exchange_attempts",
+      "comment": "교환 rate limit(IP당 분당 5회)용. 실패한 시도도 센다. 청소 작업 없음 — IP 하나가 하루 7,200행",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int8",
+          "nullable": false,
+          "default": "nextval('pairing_exchange_attempts_id_seq'::regclass)",
+          "comment": "",
+          "keys": [
+            "PK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "client_ip_hash",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "attempted_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        }
+      ]
+    },
+    {
+      "name": "refresh_tokens",
+      "comment": "갱신 토큰",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int8",
+          "nullable": false,
+          "default": "nextval('refresh_tokens_id_seq'::regclass)",
+          "comment": "토큰ID",
+          "keys": [
+            "PK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "user_id",
+          "type": "int8",
+          "nullable": false,
+          "default": "",
+          "comment": "회원ID",
+          "keys": [
+            "FK"
+          ],
+          "ref": {
+            "table": "users",
+            "column": "id"
+          }
+        },
+        {
+          "name": "token_hash",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": "",
+          "comment": "토큰 해시",
+          "keys": [
+            "UK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "만료일시",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "default": "",
+          "comment": "무효화일시",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "등록일시",
+          "keys": [],
+          "ref": null
+        }
+      ]
+    },
+    {
+      "name": "secrets",
+      "comment": "SecretStore 포트의 PG 구현. 값은 AES-256-GCM으로만 저장한다",
+      "columns": [
+        {
+          "name": "ref",
+          "type": "varchar(255)",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [
+            "PK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "ciphertext",
+          "type": "bytea",
+          "nullable": false,
+          "default": "",
+          "comment": "nonce(12B) || ciphertext || tag(16B)",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        }
+      ]
+    },
+    {
+      "name": "stream_keys",
+      "comment": "streamid는 해시만, passphrase는 SecretStore 참조만 둔다 (ADR-018)",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int8",
+          "nullable": false,
+          "default": "nextval('stream_keys_id_seq'::regclass)",
+          "comment": "",
+          "keys": [
+            "PK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "user_id",
+          "type": "int8",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [
+            "FK",
+            "UK*"
+          ],
+          "ref": {
+            "table": "users",
+            "column": "id"
+          }
+        },
+        {
+          "name": "streamid_hash",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [
+            "UK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "passphrase_ref",
+          "type": "varchar(255)",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "default": "",
+          "comment": "NULL이면 살아있다. ADR-018의 active BOOLEAN을 대체한다 — 폐기 시각이 사고 조사에 쓰인다",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "",
+          "keys": [],
+          "ref": null
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "comment": "회원",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int8",
+          "nullable": false,
+          "default": "nextval('users_id_seq'::regclass)",
+          "comment": "회원ID",
+          "keys": [
+            "PK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "google_sub",
+          "type": "varchar(255)",
+          "nullable": false,
+          "default": "",
+          "comment": "구글 고유ID",
+          "keys": [
+            "UK"
+          ],
+          "ref": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(320)",
+          "nullable": false,
+          "default": "",
+          "comment": "이메일",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "default": "",
+          "comment": "이름",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "profile_image_url",
+          "type": "varchar(1024)",
+          "nullable": true,
+          "default": "",
+          "comment": "프로필 이미지",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "등록일시",
+          "keys": [],
+          "ref": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "default": "",
+          "comment": "수정일시",
+          "keys": [],
+          "ref": null
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "from": "pairing_codes",
+      "column": "user_id",
+      "to": "users",
+      "to_column": "id",
+      "nullable": false
+    },
+    {
+      "from": "refresh_tokens",
+      "column": "user_id",
+      "to": "users",
+      "to_column": "id",
+      "nullable": false
+    },
+    {
+      "from": "stream_keys",
+      "column": "user_id",
+      "to": "users",
+      "to_column": "id",
+      "nullable": false
+    }
+  ]
+}
