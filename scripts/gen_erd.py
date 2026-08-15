@@ -60,7 +60,10 @@ ORDER BY c.table_name, c.ordinal_position
 """
 
 KEYS = """
-SELECT tc.table_name, kcu.column_name, tc.constraint_type
+SELECT tc.table_name, kcu.column_name, tc.constraint_type, tc.constraint_name,
+       (SELECT count(*) FROM information_schema.key_column_usage k2
+         WHERE k2.constraint_name = tc.constraint_name
+           AND k2.table_schema = tc.table_schema) AS ncols
 FROM information_schema.table_constraints tc
 JOIN information_schema.key_column_usage kcu
   ON kcu.constraint_name = tc.constraint_name
@@ -104,6 +107,10 @@ def main():
     keys = {}  # (table, column) -> set of marks
     for r in psql(KEYS):
         mark = "PK" if r["constraint_type"] == "PRIMARY KEY" else "UK"
+        # 복합 키는 "UK(2)"처럼 표시한다 — 컬럼 하나하나가 유일한 게 아니라
+        # 묶음이 유일하다는 뜻이다. chat_messages의 4컬럼 지문이 그렇다.
+        if int(r["ncols"]) > 1:
+            mark = f"{mark}({r['ncols']})"
         keys.setdefault((r["table_name"], r["column_name"]), set()).add(mark)
     for r in psql(PARTIAL_UNIQUE):
         keys.setdefault((r["table_name"], r["column_name"]), set()).add("UK*")
