@@ -94,7 +94,8 @@
     <span class="k" style="color:var(--pk)">PK</span> 기본키 ·
     <span class="k" style="color:var(--fk)">FK</span> 외래키 ·
     <span class="k" style="color:#80cbc4">UK</span> 유니크
-    (<span class="k" style="color:#80cbc4">UK*</span> 부분) ·
+    (<span class="k" style="color:#80cbc4">UK(n)</span> n개 묶음 ·
+     <span class="k" style="color:#80cbc4">UK*</span> 부분) ·
     <span style="color:var(--type)">이름*</span> = NOT NULL
   </div>
 </div>
@@ -111,8 +112,16 @@
     secrets: "비밀 저장소",
     pairing_codes: "페어링 코드",
     pairing_exchange_attempts: "페어링 교환 시도",
+    chat_messages: "채팅 메시지",
   };
   const COLUMN_KO = {
+    "chat_messages.id": "메시지ID",
+    "chat_messages.channel_id": "치지직 채널ID — 지금은 이것이 방송 식별자",
+    "chat_messages.sender_channel_id": "보낸 사람의 채널ID",
+    "chat_messages.content": "채팅 본문",
+    "chat_messages.message_time": "치지직이 찍은 시각(UTC)",
+    "chat_messages.received_at": "우리가 받은 시각(UTC) — 중앙값 175ms 늦다",
+    "chat_messages.content_sha256": "본문 해시 — 중복 방어 지문의 일부",
     "pairing_codes.id": "코드ID",
     "pairing_codes.user_id": "회원ID — 발급받은 스트리머",
     "pairing_codes.code_hash": "코드의 SHA-256 해시",
@@ -135,10 +144,13 @@
     users: [760, 420], refresh_tokens: [1300, 60], stream_keys: [1300, 460],
     pairing_codes: [180, 60], pairing_exchange_attempts: [180, 470],
     secrets: [180, 760],
+    chat_messages: [760, 900],
   };
   const MEMOS = [
     { at: [760, 130], head: "스트림키 비밀의 자리",
       body: "streamid 원문·passphrase는 stream_keys에 없다 — secrets(AES-256-GCM)에만 있고 표에는 해시·참조뿐이다. 웹으로는 못 보고 페어링 코드 교환으로만 나간다." },
+    { at: [1300, 900], head: "chat_messages는 FK가 없다",
+      body: "채팅은 auth의 users와 잇지 않는다 — 시청자는 우리 회원이 아니다. 방송 한 회를 가리키는 stream_id도 아직 없다(계약9 이후). 지금 방송 경계는 channel_id다. 중복은 (channel, sender, message_time, content 해시) UNIQUE가 막는다 — 치지직이 메시지 ID를 안 준다." },
     { at: [180, 950], head: "청소 작업 없음 (알려진 구멍)",
       body: "pairing_codes·pairing_exchange_attempts는 지우는 작업이 아직 없다. 교환은 미인증이라 행이 계속 쌓인다 — 운영 전에 청소 작업이 필요하다." },
   ];
@@ -169,11 +181,13 @@
     const el = document.createElement("div");
     el.className = "tbl";
     el.dataset.name = t.name;
-    const keyMark = c =>
-      c.keys.includes("PK") ? '<span class="key pk">PK</span>' :
-      c.keys.includes("FK") ? '<span class="key fk">FK</span>' :
-      c.keys.includes("UK") ? '<span class="key uk">UK</span>' :
-      c.keys.includes("UK*") ? '<span class="key uk">UK*</span>' : "";
+    // 우선순위: PK > FK > UK 계열. UK(2)·UK* 같은 변형은 그대로 보여준다.
+    const keyMark = c => {
+      if (c.keys.some(k => k.startsWith("PK"))) return '<span class="key pk">PK</span>';
+      if (c.keys.includes("FK")) return '<span class="key fk">FK</span>';
+      const uk = c.keys.find(k => k.startsWith("UK"));
+      return uk ? `<span class="key uk">${esc(uk)}</span>` : "";
+    };
     el.innerHTML = `
       <h2 title="${esc(t.comment || "")}">${esc(t.name)}
         <span class="ko">${esc(TABLE_KO[t.name] || "")}</span></h2>
