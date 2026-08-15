@@ -30,7 +30,8 @@ Swagger UI + JSON을 Pages로 배포
 | `scripts/extract.sh` | 서버 4개를 차례로 띄워 문서를 뽑는다 |
 | `scripts/mint_jwt.py` | auth의 `/v3/api-docs`가 인증에 걸려 있어, CI가 정한 시크릿으로 토큰을 직접 서명한다 |
 | `scripts/postprocess.py` | 내부 API 제거 + 설명 주입 |
-| `site/index.html` | Swagger UI. 드롭다운으로 서버 4개를 고른다 |
+| `site/index.html` | 쉘 — 상단 탭(API 명세 / DB ERD)으로 두 페이지를 오간다. 해시 `#api`·`#erd`, 단축키 1·2 |
+| `site/api.html` | Swagger UI. 드롭다운으로 서버 4개를 고른다 |
 | `site/erd.html` | erdcloud풍 인터랙티브 ERD — 팬·줌·테이블 드래그. 데이터는 `gen_erd.py`가 실제 스키마에서 뽑은 `schema.json` |
 | `scripts/gen_erd.py` | Flyway 적용이 끝난 postgres에서 테이블·키·코멘트를 읽는다 |
 

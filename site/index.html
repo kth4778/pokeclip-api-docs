@@ -3,45 +3,99 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PokeClip API 명세</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <title>PokeClip 문서</title>
   <style>
-    body { margin: 0; }
-    /* 상단 초록 바의 URL 입력칸은 숨긴다 — 드롭다운으로만 고른다 */
-    .swagger-ui .topbar .download-url-wrapper .select-label { color: #fff; }
-    /* ERD 페이지로 가는 배지. Swagger 상단 바는 건드리지 않는다 */
-    .erd-link { position: fixed; right: 1rem; bottom: 1rem; z-index: 10;
-                background: #2e7d32; color: #fff; text-decoration: none;
-                padding: .55rem 1rem; border-radius: 999px; font-weight: 700;
-                font-family: sans-serif; font-size: .85rem;
-                box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    /* 쉘 — 상단 탭 하나로 API 명세(Swagger)와 ERD를 오간다.
+       두 페이지는 iframe으로 붙박이 두고 display만 바꾼다. 그래야
+       Swagger의 펼친 상태·ERD의 줌 위치가 탭을 오가도 살아 있다. */
+    :root { --bar: #1b1b1b; --fg: #e8e8e8; --muted: #9aa; --accent: #7fc98a; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; background: #333;
+           font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+    header { flex: none; display: flex; align-items: stretch; height: 46px;
+             background: var(--bar); border-bottom: 1px solid #000; color: var(--fg); }
+    header .brand { display: flex; align-items: center; gap: .55rem;
+                    padding: 0 1.2rem; font-weight: 800; font-size: .95rem;
+                    border-right: 1px solid #2a2a2a; }
+    header .brand .dot { width: 10px; height: 10px; border-radius: 50%;
+                         background: var(--accent); }
+    nav { display: flex; }
+    nav a { display: flex; align-items: center; gap: .4rem; padding: 0 1.1rem;
+            color: var(--muted); text-decoration: none; font-size: .88rem;
+            border-bottom: 2px solid transparent; }
+    nav a:hover { color: var(--fg); }
+    nav a.on { color: var(--accent); border-bottom-color: var(--accent);
+               font-weight: 700; }
+    nav a kbd { font-family: inherit; font-size: .68rem; color: #777;
+                border: 1px solid #3a3a3a; border-radius: 3px; padding: 0 .3rem; }
+    header .right { margin-left: auto; display: flex; align-items: center;
+                    gap: 1rem; padding: 0 1.2rem; font-size: .75rem; color: var(--muted); }
+    header .right a { color: var(--muted); text-decoration: none; }
+    header .right a:hover { color: var(--fg); }
+    #panes { flex: 1; position: relative; }
+    #panes iframe { position: absolute; inset: 0; width: 100%; height: 100%;
+                    border: 0; display: none; background: #fff; }
+    #panes iframe.on { display: block; }
+    #panes iframe[data-tab="erd"] { background: #333; }
   </style>
 </head>
 <body>
-<a class="erd-link" href="./erd.html">DB ERD →</a>
-<div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+<header>
+  <div class="brand"><span class="dot"></span>PokeClip</div>
+  <nav>
+    <a href="#api" data-tab="api">API 명세 <kbd>1</kbd></a>
+    <a href="#erd" data-tab="erd">DB ERD <kbd>2</kbd></a>
+  </nav>
+  <div class="right">
+    <span id="updated"></span>
+    <a href="https://github.com/kth4778/pokeclip-api-docs" target="_blank" rel="noopener">소스</a>
+  </div>
+</header>
+<div id="panes">
+  <iframe data-tab="api" src="api.html" title="API 명세"></iframe>
+  <iframe data-tab="erd" src="erd.html" title="DB ERD"></iframe>
+</div>
 <script>
-  // manifest.json은 추출 워크플로가 만든다. 성공적으로 뽑힌 서버만 실린다.
-  fetch("specs/manifest.json")
-    .then(r => r.json())
-    .then(urls => {
-      SwaggerUIBundle({
-        urls: urls,
-        "urls.primaryName": urls.length ? urls[0].name : undefined,
-        dom_id: "#swagger-ui",
-        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        layout: "StandaloneLayout",
-        deepLinking: true,
-        defaultModelsExpandDepth: 1,
+  const TABS = ["api", "erd"];
+  const links = [...document.querySelectorAll("nav a")];
+  const frames = [...document.querySelectorAll("#panes iframe")];
+
+  function show(tab) {
+    if (!TABS.includes(tab)) tab = "api";
+    links.forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
+    frames.forEach(f => f.classList.toggle("on", f.dataset.tab === tab));
+    document.title = tab === "api" ? "PokeClip API 명세" : "PokeClip DB ERD";
+    localStorage.setItem("pokeclip-docs-tab", tab);
+  }
+  // 해시가 진실이다 — 링크 공유·뒤로가기가 그대로 된다. 없으면 마지막 탭.
+  const fromHash = () => location.hash.replace("#", "");
+  show(fromHash() || localStorage.getItem("pokeclip-docs-tab") || "api");
+  addEventListener("hashchange", () => show(fromHash()));
+
+  // 숫자키 1·2로 전환. 입력칸(Swagger의 Try it out 등)에 포커스면 건너뛴다.
+  addEventListener("keydown", e => {
+    if (e.target.matches("input, textarea, select")) return;
+    if (e.key === "1") location.hash = "api";
+    if (e.key === "2") location.hash = "erd";
+  });
+  // iframe 안에서 눌러도 잡히도록 — 같은 출처라 접근할 수 있다
+  frames.forEach(f => f.addEventListener("load", () => {
+    try {
+      f.contentWindow.addEventListener("keydown", e => {
+        if (e.target.matches("input, textarea, select")) return;
+        if (e.key === "1") location.hash = "api";
+        if (e.key === "2") location.hash = "erd";
       });
-    })
-    .catch(() => {
-      document.getElementById("swagger-ui").innerHTML =
-        "<p style='font-family:sans-serif;padding:2rem'>명세 파일이 아직 없다. " +
-        "Actions의 첫 배포가 끝났는지 확인해라.</p>";
-    });
+    } catch (_) { /* 교차 출처면 조용히 넘어간다 */ }
+  }));
+
+  // 마지막 갱신 시각 — manifest.json의 Last-Modified 헤더에서 읽는다
+  fetch("specs/manifest.json", { method: "HEAD" }).then(r => {
+    const lm = r.headers.get("last-modified");
+    if (lm) document.getElementById("updated").textContent =
+      "갱신 " + new Date(lm).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" });
+  }).catch(() => {});
 </script>
 </body>
 </html>

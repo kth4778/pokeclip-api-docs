@@ -18,13 +18,8 @@
     body { margin: 0; background: var(--canvas); color: var(--fg);
            font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
            display: flex; flex-direction: column; overflow: hidden; }
-    header { display: flex; align-items: baseline; gap: 1rem; flex: none;
-             padding: .8rem 1.5rem; background: var(--panel);
-             border-bottom: 1px solid #1c1c1c; z-index: 5; }
-    header h1 { font-size: 1.05rem; margin: 0; }
-    header nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
-    header nav a.on { color: var(--accent); font-weight: 700; }
-    header .hint { margin-left: auto; color: var(--muted); font-size: .75rem; }
+    #hint { position: absolute; top: .6rem; right: 1rem; z-index: 5;
+            color: var(--muted); font-size: .72rem; pointer-events: none; }
 
     #viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; }
     #viewport.panning { cursor: grabbing; }
@@ -84,15 +79,8 @@
   </style>
 </head>
 <body>
-<header>
-  <h1>PokeClip DB</h1>
-  <nav>
-    <a href="./index.html">API 명세</a>
-    <a href="./erd.html" class="on">ERD</a>
-  </nav>
-  <span class="hint">빈 곳 드래그 = 이동 · 휠 = 확대/축소 · 테이블 드래그 = 배치 (자동 저장)</span>
-</header>
 <div id="viewport">
+  <div id="hint">빈 곳 드래그 = 이동 · 휠 = 확대/축소 · 테이블 드래그 = 배치 (자동 저장)</div>
   <div id="world">
     <svg id="edges" width="4000" height="3000"></svg>
   </div>
@@ -287,6 +275,7 @@
   document.getElementById("fit").onclick = fit;
   document.getElementById("reset").onclick = () => {
     localStorage.removeItem(LS); localStorage.removeItem(VS);
+    localStorage.removeItem(VS + "-fitted");
     location.reload();
   };
   function fit() {
@@ -301,7 +290,17 @@
     view.y = -minY * view.z + (viewport.clientHeight - (maxY - minY) * view.z) / 2;
     apply();
   }
-  if (!localStorage.getItem(VS)) fit();   // 처음 온 사람은 전체 보기로 시작
+  // 쉘(index.html)이 이 페이지를 숨긴 iframe으로 먼저 로드한다. 그때는
+  // 상자 크기가 전부 0이라 관계선이 좌상단에 뭉친다 — 보이는 순간 다시 잰다.
+  // 뷰포트 크기가 0 → 양수로 바뀌는 것을 신호로 쓴다.
+  new ResizeObserver(() => {
+    if (viewport.clientWidth === 0) return;
+    drawEdges();
+    if (!localStorage.getItem(VS + "-fitted")) {
+      fit();
+      localStorage.setItem(VS + "-fitted", "1");
+    }
+  }).observe(viewport);
 
   // ── 드래그: 테이블/메모 = 개별 이동, 빈 곳 = 팬 ──
   let drag = null;
