@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PokeClip API 명세</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    body { margin: 0; }
+    /* 상단 초록 바의 URL 입력칸은 숨긴다 — 드롭다운으로만 고른다 */
+    .swagger-ui .topbar .download-url-wrapper .select-label { color: #fff; }
+  </style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+<script>
+  // manifest.json은 추출 워크플로가 만든다. 성공적으로 뽑힌 서버만 실린다.
+  fetch("specs/manifest.json")
+    .then(r => r.json())
+    .then(urls => {
+      SwaggerUIBundle({
+        urls: urls,
+        "urls.primaryName": urls.length ? urls[0].name : undefined,
+        dom_id: "#swagger-ui",
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout",
+        deepLinking: true,
+        defaultModelsExpandDepth: 1,
+      });
+    })
+    .catch(() => {
+      document.getElementById("swagger-ui").innerHTML =
+        "<p style='font-family:sans-serif;padding:2rem'>명세 파일이 아직 없다. " +
+        "Actions의 첫 배포가 끝났는지 확인해라.</p>";
+    });
+</script>
+</body>
+</html>
