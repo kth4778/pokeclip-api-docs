@@ -125,6 +125,41 @@ OPS = {
          "410": key_err("만료된 코드다 (발급 후 10분).", "PAIRING_CODE_EXPIRED"),
          "429": key_err("시도 한도 초과 (IP당 분당 5회).", "PAIRING_CODE_RATE_LIMITED")},
     ),
+    ("/api/chzzk-link/start", "post"): (
+        "치지직 연동 동의 URL 발급",
+        "치지직 동의 화면으로 보낼 URL을 만든다. **state에 로그인한 사용자가 서명돼 있다** — "
+        "콜백이 그 state로 요청자를 확인하므로 다른 사람 대신 연동을 완료시킬 수 없다.",
+        [{"bearerAuth": []}], "치지직 연동", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/chzzk-link", "post"): (
+        "치지직 연동 완료",
+        "동의 콜백이 받은 `code`·`state`로 연동을 마무리한다. "
+        "**연동될 채널은 요청 본문이 아니라 치지직 `me` 응답으로 확정한다** — "
+        "클라이언트가 채널을 지어낼 수 없다.\n\n"
+        "다른 계정에 이미 묶인 채널이면 거절된다(DB 유니크 인덱스가 최종 방어선 — "
+        "인스턴스가 여럿이면 애플리케이션 락만으로는 안 되기 때문).",
+        [{"bearerAuth": []}], "치지직 연동",
+        {"400": key_err("state가 이 사용자 것이 아니거나 만료·위조(INVALID_STATE), "
+                        "또는 치지직이 code 교환·me 조회를 4xx로 거부(INVALID_CODE) — "
+                        "동의부터 다시 해야 한다.", "INVALID_STATE"),
+         "401": UNAUTHORIZED_JWT,
+         "409": key_err("이 채널이 이미 다른 계정에 연동돼 있다.", "CHANNEL_ALREADY_LINKED"),
+         "502": key_err("치지직이 5xx·타임아웃·형식 오류를 냈다. 재시도 대상.", "CHZZK_UNAVAILABLE")},
+    ),
+    ("/api/chzzk-link", "get"): (
+        "치지직 연동 상태 조회",
+        "가장 최근 연동 행 기준으로 상태를 돌려준다. **연동이 끊긴 상태(BROKEN·UNLINKED)도 "
+        "`channelName`은 함께 준다** — 화면이 \"어느 채널과 끊겼는지\"를 보여줄 수 있게.\n\n"
+        "상태는 저장된 값이 아니라 `access_expires_at`·`revoked_at`·`revoke_reason`에서 "
+        "**그때그때 계산**된다.",
+        [{"bearerAuth": []}], "치지직 연동", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/chzzk-link", "delete"): (
+        "치지직 연동 해제",
+        "**멱등이다 — 연동이 이미 없어도 204.** 행은 지우지 않고 남긴다(`revoked_at`만 채운다). "
+        "치지직 토큰(SecretStore의 access·refresh)은 이 시점에 버린다.",
+        [{"bearerAuth": []}], "치지직 연동", {"401": UNAUTHORIZED_JWT},
+    ),
 }
 
 OK_DESC = {
@@ -137,6 +172,10 @@ OK_DESC = {
     ("/api/stream-keys/pairing-codes", "post", "201"): "발급 완료.",
     ("/api/stream-keys/pairing-codes/exchange", "post", "200"):
         "교환 성공. **이 응답이 긴 비밀을 담는 유일한 곳이다.**",
+    ("/api/chzzk-link/start", "post", "200"): "발급 성공.",
+    ("/api/chzzk-link", "post", "201"): "연동 완료.",
+    ("/api/chzzk-link", "get", "200"): "조회 성공.",
+    ("/api/chzzk-link", "delete", "204"): "해제 완료(또는 이미 없었음). 본문이 없다.",
 }
 
 FIELDS = {
@@ -183,11 +222,38 @@ FIELDS = {
         "streamid": "SRT 송출 주소에 넣는 stream id.",
         "passphrase": "SRT 암호. **이 응답에서만 나간다.**",
     },
+    "StartResponse": {
+        "_": "치지직 동의 URL.",
+        "authorizeUrl": "이 주소로 사용자를 보낸다. state에 로그인한 사용자가 서명돼 있다.",
+    },
+    "LinkRequest": {
+        "_": "동의 콜백이 받은 값 그대로.",
+        "code": "치지직이 콜백에 실어 준 authorization code.",
+        "state": "start에서 발급한 값. 요청자 확인에 쓰인다.",
+    },
+    "LinkResponse": {
+        "_": "연동 완료 결과. 채널은 요청 본문이 아니라 치지직 me 응답으로 확정된 값이다.",
+        "channelId": "연동된 치지직 채널ID.",
+        "channelName": "연동된 채널명.",
+        "linkedAt": "연동 완료 시각.",
+    },
+    "LinkStatusResponse": {
+        "_": "연동 상태. 매 요청 시점의 계산값이다 — 저장된 상태 컬럼이 아니다.",
+        "linked": "지금 유효한 연동이면 true. status가 ACTIVE·EXPIRED일 때만 true다.",
+        "channelId": "연동(됐던) 채널ID. 한 번도 연동한 적 없으면 필드가 없다.",
+        "channelName": "연동(됐던) 채널명. 끊긴 상태에도 표시용으로 남는다.",
+        "status": "ACTIVE(정상)·EXPIRED(토큰 만료, 갱신 대기)·BROKEN(치지직이 갱신 거부)"
+                  "·UNLINKED(사용자가 해제) 중 하나.",
+        "linkedAt": "최초 연동 시각.",
+        "lastRefreshedAt": "마지막으로 토큰을 확인·갱신한 시각.",
+        "accessExpiresAt": "치지직 access 토큰 만료 시각.",
+    },
 }
 
 TAGS = [
     {"name": "인증", "description": "구글 로그인과 토큰 수명 관리."},
     {"name": "스트림키", "description": "OBS 송출용 비밀번호의 발급·재발급·플러그인 전달."},
+    {"name": "치지직 연동", "description": "치지직 채널을 계정에 묶는다. 로그인(구글)과는 별개다."},
 ]
 
 
@@ -238,10 +304,14 @@ def enrich_auth(doc):
         if resp is not None:
             resp["description"] = text
     # springdoc은 @ResponseStatus(NO_CONTENT)를 못 읽고 200으로 적는다.
-    logout = doc.get("paths", {}).get("/api/auth/logout", {}).get("post", {}).get("responses")
-    if logout and "200" in logout and "204" not in logout:
-        logout["204"] = {"description": "폐기 완료. 본문이 없다."}
-        del logout["200"]
+    for path, method, text in [
+        ("/api/auth/logout", "post", "폐기 완료. 본문이 없다."),
+        ("/api/chzzk-link", "delete", "해제 완료(또는 이미 없었음). 본문이 없다."),
+    ]:
+        responses = doc.get("paths", {}).get(path, {}).get(method, {}).get("responses")
+        if responses and "200" in responses and "204" not in responses:
+            responses["204"] = {"description": text}
+            del responses["200"]
     for name, spec in FIELDS.items():
         schema = doc.get("components", {}).get("schemas", {}).get(name)
         if schema is None:
