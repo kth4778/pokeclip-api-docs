@@ -45,7 +45,8 @@ jobs:
 
     env:
       # 문서 추출용 더미다. 이 잡 안에서만 살고 어떤 실 환경과도 무관하다.
-      # auth는 이 여섯 개가 없으면 의도적으로 부팅을 거부한다.
+      # auth는 이 아홉 개가 없으면 의도적으로 부팅을 거부한다(services/auth/CLAUDE.md
+      # 2026-08-17 — POK-93 치지직 연동으로 여섯에서 아홉으로 늘었다).
       POSTGRES_USER: pokeclip
       POSTGRES_PASSWORD: ci-only
       POSTGRES_DB: pokeclip
@@ -55,6 +56,9 @@ jobs:
       CORS_ALLOWED_ORIGINS: http://localhost:3000
       SECRET_STORE_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= # '0' 32개의 base64
       INTERNAL_API_TOKEN: ci-dummy
+      CHZZK_CLIENT_ID: ci-dummy
+      CHZZK_CLIENT_SECRET: ci-dummy
+      CHZZK_REDIRECT_URI: http://localhost:3000/chzzk/callback
 
     steps:
       - uses: actions/checkout@v4
