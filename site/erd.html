@@ -95,7 +95,8 @@
     <span class="k" style="color:var(--fk)">FK</span> 외래키 ·
     <span class="k" style="color:#80cbc4">UK</span> 유니크
     (<span class="k" style="color:#80cbc4">UK(n)</span> n개 묶음 ·
-     <span class="k" style="color:#80cbc4">UK*</span> 부분) ·
+     <span class="k" style="color:#80cbc4">UK*</span> 부분 ·
+     <span class="k" style="color:#80cbc4">UK*(n)</span> 부분+n개 묶음) ·
     <span style="color:var(--type)">이름*</span> = NOT NULL
   </div>
 </div>
@@ -114,8 +115,42 @@
     pairing_exchange_attempts: "페어링 교환 시도",
     chat_messages: "채팅 메시지",
     chzzk_channel_links: "치지직 채널 연동",
+    editor_invitations: "편집자 초대",
+    editor_delegations: "편집자 위임",
+    broadcasts: "방송",
+    broadcast_events: "방송 이벤트 수신 기록",
   };
   const COLUMN_KO = {
+    "editor_invitations.id": "초대ID",
+    "editor_invitations.streamer_id": "회원ID — 초대한 스트리머",
+    "editor_invitations.invitee_id": "회원ID — 초대받은 사람. 이메일 정확 일치로 찾은 계정",
+    "editor_invitations.status": "PENDING·ACCEPTED·DECLINED·CANCELED. 만료는 상태가 아니라 expires_at으로 판정",
+    "editor_invitations.expires_at": "만료 시각 (발송 후 7일)",
+    "editor_invitations.responded_at": "수락·거절·취소한 시각. PENDING인 동안은 NULL",
+    "editor_invitations.created_at": "발송 시각. 재초대해도 이 행의 expires_at만 밀리고 새 행이 안 생긴다",
+    "editor_invitations.updated_at": "마지막 갱신 시각",
+    "editor_delegations.id": "위임ID",
+    "editor_delegations.streamer_id": "회원ID — 스트리머",
+    "editor_delegations.editor_id": "회원ID — 편집자",
+    "editor_delegations.invitation_id": "이 위임을 만든 초대. 초대 없이 생기는 위임은 없다",
+    "editor_delegations.granted_at": "위임이 생긴(초대를 수락한) 시각",
+    "editor_delegations.revoked_at": "해제 시각. NULL이면 살아 있다",
+    "broadcasts.id": "방송ID",
+    "broadcasts.stream_id": "영상 서버가 부르는 방송 이름. UNIQUE가 동시 생성을 막는다",
+    "broadcasts.streamer_id": "스트리머 식별자. FK 없음 — auth 소유 표라 직접 참조하지 않는다(ADR-022)",
+    "broadcasts.status": "live·ended·vod_ready",
+    "broadcasts.started_at": "시작 시각. 종료가 먼저 도착하면 NULL로 남는다(역순 도착 표시)",
+    "broadcasts.ended_at": "종료 시각",
+    "broadcasts.track_manifest": "시작 이벤트의 트랙 구성 스냅샷. 구조 변경에 안 깨지게 통째로 담는다",
+    "broadcasts.last_sequence": "마지막으로 반영한 이벤트 순서 번호. 역순 도착 판정 기준",
+    "broadcasts.created_at": "행 생성 시각",
+    "broadcasts.updated_at": "마지막 갱신 시각",
+    "broadcast_events.id": "수신 기록ID",
+    "broadcast_events.event_id": "이벤트 고유ID. UNIQUE가 멱등의 진짜 방어선",
+    "broadcast_events.stream_id": "봉투에 적힌 방송 이름. 처리 실패로 broadcasts에 행이 안 생겨도 이건 남는다",
+    "broadcast_events.event_type": "이벤트 종류(started·ended 등)",
+    "broadcast_events.sequence_no": "발신 측이 매긴 순서 번호",
+    "broadcast_events.processed_at": "우리가 처리한 시각",
     "chzzk_channel_links.id": "연동ID",
     "chzzk_channel_links.user_id": "회원ID — 연동한 사람",
     "chzzk_channel_links.channel_id": "치지직 채널ID. 치지직 me 응답으로 확정 — 요청 본문값을 안 믿는다",
@@ -156,18 +191,26 @@
     users: [760, 420], refresh_tokens: [1300, 60], stream_keys: [1300, 460],
     pairing_codes: [180, 60], pairing_exchange_attempts: [180, 470],
     secrets: [180, 760],
-    chat_messages: [760, 900],
+    chat_messages: [400, 1160],
     chzzk_channel_links: [1720, 60],
+    editor_invitations: [760, 60],
+    editor_delegations: [1300, 900],
+    broadcasts: [2300, 60],
+    broadcast_events: [2300, 500],
   };
   const MEMOS = [
     { at: [760, 130], head: "스트림키 비밀의 자리",
       body: "streamid 원문·passphrase는 stream_keys에 없다 — secrets(AES-256-GCM)에만 있고 표에는 해시·참조뿐이다. 웹으로는 못 보고 페어링 코드 교환으로만 나간다." },
     { at: [1720, 320], head: "치지직 토큰도 secrets를 쓴다",
       body: "access_token_ref·refresh_token_ref는 stream_keys와 같은 방식 — 원문은 secrets에만 있다. 계정당·채널당 살아있는 연동이 하나인 것도 부분 유니크 인덱스가 DB에서 강제한다(uq_chzzk_links_alive_user·_channel) — 인스턴스가 여럿이면 애플리케이션 락만으론 안 되기 때문." },
-    { at: [1300, 900], head: "chat_messages는 FK가 없다",
+    { at: [400, 1420], head: "chat_messages는 FK가 없다",
       body: "채팅은 auth의 users와 잇지 않는다 — 시청자는 우리 회원이 아니다. 방송 한 회를 가리키는 stream_id도 아직 없다(계약9 이후). 지금 방송 경계는 channel_id다. 중복은 (channel, sender, message_time, content 해시) UNIQUE가 막는다 — 치지직이 메시지 ID를 안 준다." },
     { at: [180, 950], head: "청소 작업 없음 (알려진 구멍)",
       body: "pairing_codes·pairing_exchange_attempts는 지우는 작업이 아직 없다. 교환은 미인증이라 행이 계속 쌓인다 — 운영 전에 청소 작업이 필요하다." },
+    { at: [1300, 1160], head: "위임은 초대 없이 안 생긴다",
+      body: "editor_delegations.invitation_id는 그 위임을 만든 초대를 가리킨다. 권한 등급은 없다 — 위임되면 그 스트리머에 대해 전부 할 수 있다. 해제해도 행은 지우지 않고 revoked_at·revoked_by(STREAMER=내보냄, EDITOR=나감)만 채운다." },
+    { at: [2300, 900], head: "broadcasts·broadcast_events는 auth와 안 잇는다",
+      body: "streamer_id에 FK가 없다 — 그 표는 auth 소유고, 서로의 표를 직접 참조하지 않는 것이 ADR-022의 경계다. broadcast_events.event_id UNIQUE가 SQS 중복 수신(at-least-once)에 대한 멱등의 진짜 방어선이다. last_sequence는 이벤트가 역순으로 도착했을 때 무시하기 위한 기준이다." },
   ];
 
   const world = document.getElementById("world");
