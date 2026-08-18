@@ -206,11 +206,17 @@
     { at: [400, 1420], head: "chat_messages는 FK가 없다",
       body: "채팅은 auth의 users와 잇지 않는다 — 시청자는 우리 회원이 아니다. 방송 한 회를 가리키는 stream_id도 아직 없다(계약9 이후). 지금 방송 경계는 channel_id다. 중복은 (channel, sender, message_time, content 해시) UNIQUE가 막는다 — 치지직이 메시지 ID를 안 준다." },
     { at: [180, 950], head: "청소 작업 없음 (알려진 구멍)",
-      body: "pairing_codes·pairing_exchange_attempts는 지우는 작업이 아직 없다. 교환은 미인증이라 행이 계속 쌓인다 — 운영 전에 청소 작업이 필요하다." },
+      body: "pairing_codes·pairing_exchange_attempts는 지우는 작업이 아직 없다. 교환은 미인증이라 행이 계속 쌓인다 — 운영 전에 청소 작업이 필요하다. client_ip_hash는 소금 없는 SHA-256이라 IPv4 공간(2^32)을 전수 대입하면 몇 분 안에 원문 IP로 되돌릴 수 있다 — SELECT * 노출은 막지만 '개인정보 위험을 낮춘다'는 목적은 사실상 달성 못 한다." },
     { at: [1300, 1160], head: "위임은 초대 없이 안 생긴다",
       body: "editor_delegations.invitation_id는 그 위임을 만든 초대를 가리킨다. 권한 등급은 없다 — 위임되면 그 스트리머에 대해 전부 할 수 있다. 해제해도 행은 지우지 않고 revoked_at·revoked_by(STREAMER=내보냄, EDITOR=나감)만 채운다." },
     { at: [2300, 900], head: "broadcasts·broadcast_events는 auth와 안 잇는다",
       body: "streamer_id에 FK가 없다 — 그 표는 auth 소유고, 서로의 표를 직접 참조하지 않는 것이 ADR-022의 경계다. broadcast_events.event_id UNIQUE가 SQS 중복 수신(at-least-once)에 대한 멱등의 진짜 방어선이다. last_sequence는 이벤트가 역순으로 도착했을 때 무시하기 위한 기준이다." },
+    { at: [50, 300], head: "알려진 보안 구멍 — 초대 가로채기",
+      body: "구글 로그인이 email_verified를 안 본다. editor_invitations가 이메일 정확 일치로 상대를 찾는데(V108, uq_users_email), 공격자가 피해자 주소로 먼저 가입해 두면 그 주소로 온 초대를 가로챈다 — 피해자는 나중에 그 주소로 로그인하려 해도 UNIQUE 위반으로 막힌다(가입 자체가 안 됨). 팀이 인지한 채 보류하기로 결정했다(2026-08-18). 서비스 안 할 프로젝트라 여기 그대로 적는다." },
+    { at: [50, 600], head: "secrets 키 회전 경로 없음 (알려진 구멍)",
+      body: "AES-256-GCM 암호화 키를 바꾸면 기존 행을 못 푼다. key_version 컬럼을 일부러 안 넣었다 — 필요해지면 그때 DEFAULT 1로 추가해도 기존 행이 전부 v1이라는 사실은 안 깨진다(PostgreSQL 11+에서 그 ALTER는 테이블 재작성 없이 메타데이터만 바꾼다)." },
+    { at: [2000, 900], head: "broadcast_events, 두 가지 알려진 구멍",
+      body: "① schemaVersion을 읽기만 하고 검증하지 않는다 — media가 호환 안 되는 버전을 내면 현재 스키마로 처리 후 삭제해 되감을 방법이 없다(계약 미확정, contracts/sqs/ 비어있음). ② unknown_type_dropped 로그의 eventType·eventId가 외부 입력 그대로라 개행이 섞이면 로그 위조가 가능하다(발행자가 같은 팀이라 위협 수위는 낮음)." },
   ];
 
   const world = document.getElementById("world");

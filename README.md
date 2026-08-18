@@ -14,7 +14,7 @@ mono를 checkout → 서버 4개 bootJar 빌드 (springdoc은 init.gradle로 주
    ↓
 서버를 하나씩 띄워 /v3/api-docs 추출
    ↓
-후처리: /internal/** 제거 · 안 쓰는 스키마 제거 · 설명 주입
+후처리: 설명 주입 (내부 API·알려진 보안 구멍 포함 — 서비스 안 할 프로젝트라 가리지 않는다)
    ↓
 Swagger UI + JSON을 Pages로 배포
 ```
@@ -29,7 +29,7 @@ Swagger UI + JSON을 Pages로 배포
 | `init.gradle` | mono를 안 고치고 springdoc을 빌드 순간에만 얹는다 |
 | `scripts/extract.sh` | 서버 4개를 차례로 띄워 문서를 뽑는다 |
 | `scripts/mint_jwt.py` | auth의 `/v3/api-docs`가 인증에 걸려 있어, CI가 정한 시크릿으로 토큰을 직접 서명한다 |
-| `scripts/postprocess.py` | 내부 API 제거 + 설명 주입 |
+| `scripts/postprocess.py` | 설명 주입(내부 API·알려진 구멍 포함) |
 | `site/index.html` | 쉘 — 상단 탭(API 명세 / DB ERD)으로 두 페이지를 오간다. 해시 `#api`·`#erd`, 단축키 1·2 |
 | `site/api.html` | Swagger UI. 드롭다운으로 서버 4개를 고른다 |
 | `site/erd.html` | erdcloud풍 인터랙티브 ERD — 팬·줌·테이블 드래그. 데이터는 `gen_erd.py`가 실제 스키마에서 뽑은 `schema.json` |
@@ -37,8 +37,10 @@ Swagger UI + JSON을 Pages로 배포
 
 ## 알아둘 것
 
-- **내부 API(`/internal/**`)는 공개 문서에서 뺀다.** 이 사이트는 public이다.
-  내부 계약은 mono의 `services/README.md`에 있다.
+- **내부 API(`/internal/**`)와 알려진 보안 구멍도 전부 실었다** (2026-08-18 결정).
+  이 프로젝트는 서비스하지 않으므로 공격면을 가릴 이유가 없다 — 팀 안에서
+  계약과 함정을 한눈에 보는 것이 더 값지다는 판단. 실제로 배포하는 프로젝트라면
+  이 결정을 그대로 베끼지 마라.
 - **설명 문구는 `postprocess.py`에 하드코딩돼 있다.** mono 코드에 `@Operation`
   어노테이션이 들어가면 그쪽이 정본이 되고 이 스크립트의 ENRICH는 비운다.
   코드에 없는 경로는 조용히 건너뛰므로 mono가 바뀌어도 깨지지 않는다.

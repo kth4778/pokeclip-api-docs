@@ -1,19 +1,24 @@
-"""springdoc이 뽑은 문서를 공개용으로 다듬는다.
+"""springdoc이 뽑은 문서를 다듬는다.
 
 사용: python3 postprocess.py <서버이름> <파일>  (제자리 수정)
 
-하는 일 셋:
-1. /internal/** 경로 제거 — 이 사이트는 public이다. 팀 간 내부 계약의
-   경로·헤더·요청 형식을 공개 문서에 싣지 않는다.
-2. 남은 문서 어디서도 참조하지 않는 스키마 제거 — 1에서 지운 경로만 쓰던
-   스키마(ResolveRequest 등)가 남아 있으면 지운 의미가 없다.
-3. auth에 한해 설명 주입 — 요약·상세·필드 설명. 코드에 @Operation이 없는
+하는 일 둘:
+1. auth에 한해 설명 주입 — 요약·상세·필드 설명. 코드에 @Operation이 없는
    동안의 임시 조치다. 코드에 없는 경로는 조용히 건너뛰므로 mono가 바뀌어도
    이 스크립트는 깨지지 않는다. 언젠가 mono에 어노테이션이 들어가면
    ENRICH를 비우면 된다.
+2. 참조가 완전히 끊긴 스키마 제거(고정점까지 반복) — 지금은 아무것도
+   안 지우지만(내부 API도 문서에 실으므로), 구조는 남겨 둔다.
 
-설명 문구는 전부 2026-08-11에 실제 컨트롤러·DTO·예외 핸들러에서 확인한
-사실이다. 추측으로 쓴 문장은 없다.
+**내부 서버 간 API(/internal/**)도 이 문서에 전부 싣는다.** 이 프로젝트는
+서비스하지 않으므로 공격면을 가릴 이유가 없다 — 팀 안에서 계약을 한눈에
+보는 것이 더 값지다. `internalToken` 시큐리티 스킴이 그 경계를 표시한다.
+
+**알려진 구멍(보안 취약점 포함)도 관련 엔드포인트 설명에 그대로 적는다** —
+CLAUDE.md에 이미 기록된 사실이고, 서비스를 안 할 것이므로 숨길 이유가 없다.
+
+설명 문구는 전부 실제 컨트롤러·DTO·예외 핸들러·CLAUDE.md에서 확인한 사실이다.
+추측으로 쓴 문장은 없다.
 """
 import json
 import re
@@ -24,11 +29,15 @@ INFO = {
         "PokeClip Auth API",
         "로그인·토큰·스트림키를 담당하는 서버(포트 8082).\n\n"
         "- `bearerAuth` — 사용자 JWT. access 30분, refresh 14일\n"
+        "- `internalToken` — 서버 간 호출(`X-Internal-Token` 헤더). Media·"
+        "chat-collector가 쓴다\n"
         "- 인증 없음 — 로그인·토큰 재발급·로그아웃·페어링 코드 교환. "
         "토큰이 없어야 부를 수 있거나(로그인), 코드 자체가 자격증명이다(교환)\n\n"
         "**긴 비밀은 API로 조회할 수 없다.** streamid 원문을 저장하지 않아 줄 수 "
         "없고, passphrase는 페어링 코드 교환으로만 나간다.\n\n"
-        "내부 서버 간 API는 이 공개 문서에서 제외했다.",
+        "**이 프로젝트는 서비스하지 않는다.** 내부 API(`/internal/**`)와 알려진 "
+        "보안 구멍까지 전부 문서에 실었다 — CLAUDE.md에 이미 적혀 있던 사실이고, "
+        "가릴 이유가 없다.",
     ),
     "clip": ("PokeClip Clip API", "방송 세션·클립·승인을 담당하는 서버(포트 8081). 아직 API가 없다."),
     "chat-collector": ("PokeClip Chat Collector API",
@@ -166,17 +175,28 @@ OPS = {
         "있어야 하고, 없으면 404다.\n\n"
         "**이미 보낸 초대에 다시 부르면 새 초대가 아니라 기한을 늘린다.** 그래도 응답은 "
         "201이다 — 클라이언트 입장에서 결과는 \"초대가 있다\"로 같다.\n\n"
-        "계정당 살아있는 초대 상한은 **20건**이다.",
+        "계정당 살아있는 초대 상한은 **20건이지만 근사값이다** — \"세고 나서 쓴다\"라 "
+        "동시에 서로 다른 상대를 여러 명 초대하면 넘는다(실측: PENDING 19 + 서로 다른 "
+        "상대 8명 동시 → 27개 생성, 거부 0건). 정확히 막으려면 다른 회전 경로들과 같은 "
+        "회원 행 락이 필요한데 대가가 더 크다고 판단했다.\n\n"
+        "**알려진 보안 구멍 — 미인증 구글 이메일로 초대를 가로챌 수 있다.** "
+        "`GoogleIdTokenVerifier`가 `email_verified`를 안 본다. 공격자가 피해자의 "
+        "주소로 먼저 가입해 두면(구글 계정 자체는 미인증 이메일도 가입을 허용) "
+        "그 주소로 오는 초대를 공격자가 받는다 — 피해자가 그 주소로 나중에 로그인하려 "
+        "하면 `users.email` UNIQUE(V108)에 걸려 **가입이 거부**되므로 피해자는 시도조차 "
+        "못 한다. 팀이 이 구멍을 인지한 채 보류하기로 결정했다(2026-08-18).",
         [{"bearerAuth": []}], "편집자 위임",
         {"400": key_err("자기 자신을 초대했다.", "SELF_INVITE"),
          "401": UNAUTHORIZED_JWT,
          "404": key_err("그 이메일로 가입한 계정이 없다.", "INVITEE_NOT_FOUND"),
          "409": key_err("이미 살아있는 위임이 있다(ALREADY_EDITOR), 또는 살아있는 초대가 "
-                        "20건 상한에 찼다(TOO_MANY_PENDING).", "ALREADY_EDITOR")},
+                        "20건 상한에 찼다(TOO_MANY_PENDING — 위 설명대로 근사값).", "ALREADY_EDITOR")},
     ),
     ("/api/editor-invitations/sent", "get"): (
         "내가 보낸 초대 목록",
-        "스트리머 시점 — 상대(초대받은 사람)의 이름·이메일·상태를 함께 준다.",
+        "스트리머 시점 — 상대(초대받은 사람)의 이름·이메일·상태를 함께 준다.\n\n"
+        "**페이징이 없다.** 살아있는 초대는 상한 20이 묶지만, 거절·취소·만료된 이력은 "
+        "무한히 쌓이고 이 API가 전부 내보낸다.",
         [{"bearerAuth": []}], "편집자 위임", {"401": UNAUTHORIZED_JWT},
     ),
     ("/api/editor-invitations/received", "get"): (
@@ -228,6 +248,27 @@ OPS = {
         {"401": UNAUTHORIZED_JWT,
          "404": key_err("없거나 내 위임이 아니다.", "DELEGATION_NOT_FOUND")},
     ),
+    ("/internal/stream-keys/resolve", "post"): (
+        "스트림키 검증 (내부 전용)",
+        "**Media 서버가 송출을 받아들일지 판단하려고 부른다.** Media가 DB를 직접 읽지 "
+        "않고 이 API에 묻는다(계약4).\n\n"
+        "**키가 틀려도 HTTP 200이다.** 본문의 `valid` 필드로 판정한다. Media에게 "
+        "\"키가 틀림\"(연결 거절)과 \"Auth 장애\"(판단 불가)는 조치가 정반대인데, "
+        "둘 다 4xx로 내보내면 구분할 수 없기 때문이다.\n\n"
+        "거절 응답에는 `passphrase`·`userId`가 아예 나타나지 않는다.",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."}},
+    ),
+    ("/internal/chzzk-link/resolve", "post"): (
+        "치지직 연동 조회 (내부 전용)",
+        "**chat-collector가 회원 번호로 채널·access 토큰을 물어본다.** 이 응답의 "
+        "`accessToken`이 채팅 수집기가 치지직 API를 부르는 데 쓰는 그 토큰이다 — "
+        "만료가 임박하면 여기서 즉석 갱신 뒤 새 값을 준다.\n\n"
+        "**항상 HTTP 200이다.** 미연동·만료·해제 전부 `valid:false`로 응답하고, "
+        "\"수집 안 함\"과 \"Auth 장애\"를 상태 코드로 안 가른다(resolve 계약과 같은 원칙).",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."}},
+    ),
 }
 
 OK_DESC = {
@@ -253,6 +294,11 @@ OK_DESC = {
     ("/api/editor-delegations/as-streamer", "get", "200"): "조회 성공.",
     ("/api/editor-delegations/as-editor", "get", "200"): "조회 성공.",
     ("/api/editor-delegations/{id}", "delete", "204"): "해제 완료. 본문이 없다.",
+    ("/internal/stream-keys/resolve", "post", "200"):
+        "판정 완료. **거절도 200이다** — `valid` 필드를 본다.",
+    ("/internal/chzzk-link/resolve", "post", "200"):
+        "판정 완료. 성공 시 `accessToken`이 실린다 — 이 응답이 그 토큰이 밖으로 "
+        "나가는 유일한 경로다.",
 }
 
 FIELDS = {
@@ -357,6 +403,33 @@ FIELDS = {
         "counterpartName": "상대방의 이름.",
         "grantedAt": "위임이 생긴(초대를 수락한) 시각.",
     },
+    "ResolveRequest": {
+        "_": "Media가 보내는 검증 요청.",
+        "streamid": "송출자가 제시한 stream id 원문.",
+    },
+    "ResolveResponse": {
+        "_": "검증 결과. 거절이면 valid와 reason만 담긴다.",
+        "valid": "이 키로 송출을 받아도 되면 true.",
+        "userId": "키 주인. **거절 시에는 필드가 없다.**",
+        "passphrase": "SRT 암호. **거절 시에는 필드가 없다.**",
+        "reason": "거절 사유 — `MALFORMED`(형식 오류) · `NOT_FOUND`(없는 키) · "
+                  "`REVOKED`(재발급으로 죽은 키). **성공 시에는 필드가 없다.**",
+    },
+    "ChzzkResolveRequest": {
+        "_": "chat-collector가 보내는 조회 요청.",
+        "userId": "채널·토큰을 물어볼 회원ID.",
+    },
+    "ChzzkResolveResponse": {
+        "_": "조회 결과. 거절이면 valid와 reason만 담긴다.",
+        "valid": "지금 이 회원의 채팅을 수집해도 되면 true.",
+        "channelId": "치지직 채널ID. **거절 시에는 필드가 없다.**",
+        "accessToken": "치지직 API 호출용 토큰. 만료 임박이면 즉석 갱신한 새 값이다. "
+                       "**거절 시에는 필드가 없다.**",
+        "expiresAt": "이 accessToken의 만료 시각. **거절 시에는 필드가 없다.**",
+        "reason": "거절 사유 — `BROKEN`(치지직이 갱신 거부) · `REFRESH_UNAVAILABLE`"
+                  "(즉석 갱신 실패, 일시적) · `UNLINKED`/`NOT_LINKED`(연동 안 됨). "
+                  "**성공 시에는 필드가 없다.**",
+    },
 }
 
 TAGS = [
@@ -365,14 +438,9 @@ TAGS = [
     {"name": "치지직 연동", "description": "치지직 채널을 계정에 묶는다. 로그인(구글)과는 별개다."},
     {"name": "편집자 위임", "description": "스트리머가 편집자를 이메일로 초대하고, 수락하면 위임이 생긴다. "
                                        "권한 등급은 없다 — 위임되면 전부 할 수 있다."},
+    {"name": "내부 (서버 간 연동)", "description": "Media·chat-collector만 부른다. "
+                                             "사용자 JWT로는 통과할 수 없다(`internalToken`)."},
 ]
-
-
-def strip_internal(doc):
-    removed = [p for p in doc.get("paths", {}) if p.startswith("/internal")]
-    for p in removed:
-        del doc["paths"][p]
-    return removed
 
 
 def gc_schemas(doc):
@@ -400,6 +468,8 @@ def enrich_auth(doc):
     doc.setdefault("components", {})["securitySchemes"] = {
         "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT",
                        "description": "로그인으로 받은 access 토큰. 30분 만료."},
+        "internalToken": {"type": "apiKey", "in": "header", "name": "X-Internal-Token",
+                          "description": "Media·chat-collector만 쓴다. 배포 환경마다 값을 맞춘다."},
     }
     for (path, method), (summary, desc, sec, tag, extra) in OPS.items():
         op = doc.get("paths", {}).get(path, {}).get(method)
@@ -443,7 +513,6 @@ def main():
     with open(path) as f:
         doc = json.load(f)
 
-    removed = strip_internal(doc)
     gc_schemas(doc)
 
     title, desc = INFO[server]
@@ -459,9 +528,9 @@ def main():
         json.dump(doc, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
-    print(f"{server}: 경로 {len(doc.get('paths', {}))}개, "
-          f"스키마 {len(doc.get('components', {}).get('schemas', {}))}개, "
-          f"내부 경로 {len(removed)}개 제거")
+    internal = sum(1 for p in doc.get("paths", {}) if p.startswith("/internal"))
+    print(f"{server}: 경로 {len(doc.get('paths', {}))}개(내부 {internal}개 포함), "
+          f"스키마 {len(doc.get('components', {}).get('schemas', {}))}개")
 
 
 if __name__ == "__main__":
