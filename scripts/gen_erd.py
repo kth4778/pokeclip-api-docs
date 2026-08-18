@@ -87,8 +87,11 @@ WHERE tc.table_schema = 'public' AND tc.constraint_type = 'FOREIGN KEY'
 
 # 부분 유니크 인덱스(예: stream_keys의 "살아 있는 키는 계정당 하나")는
 # 제약이 아니라 인덱스라 위 질의에 안 잡힌다. 표시는 하되 UK와 구분한다.
+# ncols도 같이 센다 — editor_invitations의 (streamer_id, invitee_id)처럼
+# 복합 부분 유니크를 컬럼마다 UK*만 붙이면 "각각 유일"로 오해된다.
 PARTIAL_UNIQUE = """
-SELECT t.relname AS table_name, a.attname AS column_name
+SELECT t.relname AS table_name, a.attname AS column_name,
+       array_length(i.indkey, 1) AS ncols
 FROM pg_index i
 JOIN pg_class t ON t.oid = i.indrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
@@ -113,7 +116,8 @@ def main():
             mark = f"{mark}({r['ncols']})"
         keys.setdefault((r["table_name"], r["column_name"]), set()).add(mark)
     for r in psql(PARTIAL_UNIQUE):
-        keys.setdefault((r["table_name"], r["column_name"]), set()).add("UK*")
+        mark = "UK*" if int(r["ncols"]) == 1 else f"UK*({r['ncols']})"
+        keys.setdefault((r["table_name"], r["column_name"]), set()).add(mark)
 
     fks = {}  # (table, column) -> {table, column}
     relations = []

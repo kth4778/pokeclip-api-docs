@@ -160,6 +160,74 @@ OPS = {
         "치지직 토큰(SecretStore의 access·refresh)은 이 시점에 버린다.",
         [{"bearerAuth": []}], "치지직 연동", {"401": UNAUTHORIZED_JWT},
     ),
+    ("/api/editor-invitations", "post"): (
+        "편집자 초대",
+        "이메일로 편집자를 초대한다. **이메일 정확 일치만 된다** — 그 주소로 가입한 계정이 "
+        "있어야 하고, 없으면 404다.\n\n"
+        "**이미 보낸 초대에 다시 부르면 새 초대가 아니라 기한을 늘린다.** 그래도 응답은 "
+        "201이다 — 클라이언트 입장에서 결과는 \"초대가 있다\"로 같다.\n\n"
+        "계정당 살아있는 초대 상한은 **20건**이다.",
+        [{"bearerAuth": []}], "편집자 위임",
+        {"400": key_err("자기 자신을 초대했다.", "SELF_INVITE"),
+         "401": UNAUTHORIZED_JWT,
+         "404": key_err("그 이메일로 가입한 계정이 없다.", "INVITEE_NOT_FOUND"),
+         "409": key_err("이미 살아있는 위임이 있다(ALREADY_EDITOR), 또는 살아있는 초대가 "
+                        "20건 상한에 찼다(TOO_MANY_PENDING).", "ALREADY_EDITOR")},
+    ),
+    ("/api/editor-invitations/sent", "get"): (
+        "내가 보낸 초대 목록",
+        "스트리머 시점 — 상대(초대받은 사람)의 이름·이메일·상태를 함께 준다.",
+        [{"bearerAuth": []}], "편집자 위임", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/editor-invitations/received", "get"): (
+        "내가 받은 초대 목록",
+        "편집자 시점 — 상대(보낸 스트리머)의 이름을 준다. **이메일은 안 준다.** "
+        "목록에는 응답 가능한(PENDING) 것만 담긴다.",
+        [{"bearerAuth": []}], "편집자 위임", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/editor-invitations/{id}", "delete"): (
+        "보낸 초대 취소",
+        "**없는 초대에도 404다.** 존재 여부를 알려주지 않는다.",
+        [{"bearerAuth": []}], "편집자 위임",
+        {"401": UNAUTHORIZED_JWT,
+         "404": key_err("없거나 남의 초대다.", "INVITATION_NOT_FOUND")},
+    ),
+    ("/api/editor-invitations/{id}/accept", "post"): (
+        "초대 수락",
+        "수락하면 위임이 생긴다. **7일이 지난 초대는 410**이다.",
+        [{"bearerAuth": []}], "편집자 위임",
+        {"401": UNAUTHORIZED_JWT,
+         "404": key_err("없거나 남의 초대다.", "INVITATION_NOT_FOUND"),
+         "409": key_err("이미 수락·거절·취소됐다.", "INVITATION_NOT_PENDING"),
+         "410": key_err("만료된 초대다 (발급 후 7일).", "INVITATION_EXPIRED")},
+    ),
+    ("/api/editor-invitations/{id}/decline", "post"): (
+        "초대 거절",
+        "거절해도 초대 행은 남는다 — 상태만 DECLINED로 바뀐다.",
+        [{"bearerAuth": []}], "편집자 위임",
+        {"401": UNAUTHORIZED_JWT,
+         "404": key_err("없거나 남의 초대다.", "INVITATION_NOT_FOUND"),
+         "409": key_err("이미 수락·거절·취소됐다.", "INVITATION_NOT_PENDING"),
+         "410": key_err("만료된 초대다 (발급 후 7일).", "INVITATION_EXPIRED")},
+    ),
+    ("/api/editor-delegations/as-streamer", "get"): (
+        "내 편집자 목록",
+        "내가 스트리머로서 위임한 편집자들. 살아있는 위임만 담긴다.",
+        [{"bearerAuth": []}], "편집자 위임", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/editor-delegations/as-editor", "get"): (
+        "내가 편집 중인 스트리머 목록",
+        "내가 편집자로서 위임받은 스트리머들. 살아있는 위임만 담긴다.",
+        [{"bearerAuth": []}], "편집자 위임", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/editor-delegations/{id}", "delete"): (
+        "위임 해제",
+        "**스트리머가 부르면 \"내보내기\", 편집자가 부르면 \"나가기\"다** — 같은 API를 "
+        "양쪽이 쓴다. 행은 지우지 않고 `revokedAt`·`revokedBy`만 채운다.",
+        [{"bearerAuth": []}], "편집자 위임",
+        {"401": UNAUTHORIZED_JWT,
+         "404": key_err("없거나 내 위임이 아니다.", "DELEGATION_NOT_FOUND")},
+    ),
 }
 
 OK_DESC = {
@@ -176,6 +244,15 @@ OK_DESC = {
     ("/api/chzzk-link", "post", "201"): "연동 완료.",
     ("/api/chzzk-link", "get", "200"): "조회 성공.",
     ("/api/chzzk-link", "delete", "204"): "해제 완료(또는 이미 없었음). 본문이 없다.",
+    ("/api/editor-invitations", "post", "201"): "초대 발송(또는 기한 연장) 완료.",
+    ("/api/editor-invitations/sent", "get", "200"): "조회 성공.",
+    ("/api/editor-invitations/received", "get", "200"): "조회 성공.",
+    ("/api/editor-invitations/{id}", "delete", "204"): "취소 완료. 본문이 없다.",
+    ("/api/editor-invitations/{id}/accept", "post", "204"): "수락 완료. 위임이 생겼다. 본문이 없다.",
+    ("/api/editor-invitations/{id}/decline", "post", "204"): "거절 완료. 본문이 없다.",
+    ("/api/editor-delegations/as-streamer", "get", "200"): "조회 성공.",
+    ("/api/editor-delegations/as-editor", "get", "200"): "조회 성공.",
+    ("/api/editor-delegations/{id}", "delete", "204"): "해제 완료. 본문이 없다.",
 }
 
 FIELDS = {
@@ -248,12 +325,46 @@ FIELDS = {
         "lastRefreshedAt": "마지막으로 토큰을 확인·갱신한 시각.",
         "accessExpiresAt": "치지직 access 토큰 만료 시각.",
     },
+    "InviteRequest": {
+        "_": "초대 요청.",
+        "email": "초대할 사람의 가입 이메일. 정확히 일치하는 계정이 있어야 한다.",
+    },
+    "SentInvitationResponse": {
+        "_": "스트리머가 보는 초대 한 건. 상대(받는 사람)를 보여준다.",
+        "id": "초대ID.",
+        "inviteeId": "초대받은 사람의 회원ID.",
+        "inviteeName": "초대받은 사람의 이름.",
+        "inviteeEmail": "초대받은 사람의 이메일.",
+        "status": "PENDING(응답 대기)·ACCEPTED(수락됨)·DECLINED(거절됨)·CANCELED(취소됨)"
+                  "·EXPIRED(7일 경과, PENDING인 채로 기한만 지남) 중 하나.",
+        "expiresAt": "만료 시각 (발송 후 7일).",
+        "createdAt": "발송 시각. 기한을 연장해도 이 값은 안 바뀐다.",
+    },
+    "ReceivedInvitationResponse": {
+        "_": "편집자가 보는 초대 한 건. 상대(보낸 스트리머)를 보여준다. "
+             "**이메일은 안 준다.** 목록에는 응답 가능한(PENDING) 것만 담긴다.",
+        "id": "초대ID.",
+        "streamerId": "초대한 스트리머의 회원ID.",
+        "streamerName": "초대한 스트리머의 이름.",
+        "expiresAt": "만료 시각 (발송 후 7일).",
+        "createdAt": "발송 시각.",
+    },
+    "DelegationResponse": {
+        "_": "위임 한 건. 스트리머가 보면 상대가 편집자고, 편집자가 보면 상대가 스트리머다 — "
+             "양쪽이 같은 모양을 쓴다. **이메일은 안 준다.**",
+        "id": "위임ID.",
+        "counterpartId": "상대방의 회원ID.",
+        "counterpartName": "상대방의 이름.",
+        "grantedAt": "위임이 생긴(초대를 수락한) 시각.",
+    },
 }
 
 TAGS = [
     {"name": "인증", "description": "구글 로그인과 토큰 수명 관리."},
     {"name": "스트림키", "description": "OBS 송출용 비밀번호의 발급·재발급·플러그인 전달."},
     {"name": "치지직 연동", "description": "치지직 채널을 계정에 묶는다. 로그인(구글)과는 별개다."},
+    {"name": "편집자 위임", "description": "스트리머가 편집자를 이메일로 초대하고, 수락하면 위임이 생긴다. "
+                                       "권한 등급은 없다 — 위임되면 전부 할 수 있다."},
 ]
 
 
@@ -307,6 +418,10 @@ def enrich_auth(doc):
     for path, method, text in [
         ("/api/auth/logout", "post", "폐기 완료. 본문이 없다."),
         ("/api/chzzk-link", "delete", "해제 완료(또는 이미 없었음). 본문이 없다."),
+        ("/api/editor-invitations/{id}", "delete", "취소 완료. 본문이 없다."),
+        ("/api/editor-invitations/{id}/accept", "post", "수락 완료. 위임이 생겼다. 본문이 없다."),
+        ("/api/editor-invitations/{id}/decline", "post", "거절 완료. 본문이 없다."),
+        ("/api/editor-delegations/{id}", "delete", "해제 완료. 본문이 없다."),
     ]:
         responses = doc.get("paths", {}).get(path, {}).get(method, {}).get("responses")
         if responses and "200" in responses and "204" not in responses:
