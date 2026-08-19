@@ -77,8 +77,16 @@ for entry in "${SERVERS[@]}"; do
   extract_one "$name" "$port" "$auth"
 done
 
-# ERD 데이터. auth가 위에서 한 번 떴으므로 이 시점의 postgres에는
-# V1xx 마이그레이션이 전부 적용돼 있다 — 그 실제 스키마를 읽는다.
+# ── media: REST API는 없다(Go 훅 기록기 + 사이드카). stream_segments 표만
+# 있어서 ERD용으로 그 스키마만 만든다 — media/internal/index/ddl.go의
+# 실제 EnsureSchema를 그대로 불러 쓴다(scripts/media-ensure-schema.go 참고).
+echo "── media: stream_segments 스키마 보장"
+mkdir -p "$MONO/media/cmd/docs-ensure-schema"
+cp scripts/media-ensure-schema.go "$MONO/media/cmd/docs-ensure-schema/main.go"
+(cd "$MONO/media" && POSTGRES_HOST="${POSTGRES_HOST:-localhost}" go run ./cmd/docs-ensure-schema)
+
+# ERD 데이터. auth·media가 위에서 스키마를 만들었으므로 이 시점의 postgres에는
+# 전부 적용돼 있다 — 그 실제 스키마를 읽는다.
 python3 scripts/gen_erd.py "$OUT/schema.json"
 
 # Swagger UI 드롭다운이 읽는 목록. 성공한 것만 여기 실리므로,
