@@ -91,7 +91,8 @@
     <button id="reset" title="배치 초기화">↺</button>
   </div>
   <div id="legend">
-    <span class="k" style="color:var(--pk)">PK</span> 기본키 ·
+    <span class="k" style="color:var(--pk)">PK</span> 기본키
+    (<span class="k" style="color:var(--pk)">PK(n)</span> n개 묶음) ·
     <span class="k" style="color:var(--fk)">FK</span> 외래키 ·
     <span class="k" style="color:#80cbc4">UK</span> 유니크
     (<span class="k" style="color:#80cbc4">UK(n)</span> n개 묶음 ·
@@ -115,6 +116,7 @@
     pairing_exchange_attempts: "페어링 교환 시도",
     chat_messages: "채팅 메시지",
     chzzk_channel_links: "치지직 채널 연동",
+    stream_segments: "방송 조각 (media 소유)",
     editor_invitations: "편집자 초대",
     editor_delegations: "편집자 위임",
     broadcasts: "방송",
@@ -185,6 +187,17 @@
     "stream_keys.streamid_hash": "streamid의 SHA-256 해시",
     "stream_keys.passphrase_ref": "passphrase의 secrets 참조",
     "stream_keys.created_at": "발급일시",
+    "stream_segments.stream_id": "영상 서버가 부르는 방송 이름. broadcasts.stream_id와 같은 값이지만 FK는 없다(서로 다른 소유자·다른 서버 코드가 쓰는 표)",
+    "stream_segments.seq": "이 방송 안에서 조각 순서 번호. PK의 절반",
+    "stream_segments.start_pts_ms": "조각 시작 재생 시각(ms) — 방송 시작을 0으로 잡은 누적값",
+    "stream_segments.start_wall_utc": "조각 시작의 실제 벽시계 시각(UTC). 어림잡지 않고 fMP4 박스를 실측한다",
+    "stream_segments.duration_ms": "조각 길이(ms). 마찬가지로 실측값",
+    "stream_segments.s3_key": "S3에 올라간(또는 올라갈 예정인) 키",
+    "stream_segments.local_path": "로컬 디스크 경로. NULL이면 이미 로컬에서 정리된 것",
+    "stream_segments.upload_state": "pending·uploaded·failed. 완성 즉시 개별 업로드하고 실패분은 스위퍼가 재시도한다(POK-30)",
+    "stream_segments.uploaded_at": "S3 업로드 완료 시각. 업로드 전이면 NULL",
+    "stream_segments.bytes": "파일 크기. 업로드 전이면 NULL일 수 있다",
+    "stream_segments.is_discontinuity": "이 조각 앞에 방송 재연결(끊김→복구) 경계가 있었다는 표시. 클립이 이 경계를 넘어 이어붙이면 안 된다",
   };
   // 처음 열었을 때의 배치. 여기 없는 새 테이블은 아래쪽에 자동으로 줄 세운다.
   const DEFAULT_POS = {
@@ -197,6 +210,7 @@
     editor_delegations: [1300, 900],
     broadcasts: [2300, 60],
     broadcast_events: [2300, 500],
+    stream_segments: [2700, 900],
   };
   const MEMOS = [
     { at: [760, 130], head: "스트림키 비밀의 자리",
@@ -217,6 +231,10 @@
       body: "AES-256-GCM 암호화 키를 바꾸면 기존 행을 못 푼다. key_version 컬럼을 일부러 안 넣었다 — 필요해지면 그때 DEFAULT 1로 추가해도 기존 행이 전부 v1이라는 사실은 안 깨진다(PostgreSQL 11+에서 그 ALTER는 테이블 재작성 없이 메타데이터만 바꾼다)." },
     { at: [2000, 900], head: "broadcast_events, 두 가지 알려진 구멍",
       body: "① schemaVersion을 읽기만 하고 검증하지 않는다 — media가 호환 안 되는 버전을 내면 현재 스키마로 처리 후 삭제해 되감을 방법이 없다(계약 미확정, contracts/sqs/ 비어있음). ② unknown_type_dropped 로그의 eventType·eventId가 외부 입력 그대로라 개행이 섞이면 로그 위조가 가능하다(발행자가 같은 팀이라 위협 수위는 낮음)." },
+    { at: [2700, 1200], head: "stream_segments는 auth·clip 어디와도 안 잇는다",
+      body: "FK가 하나도 없다. stream_id가 broadcasts.stream_id와 같은 값을 담을 수 있지만 참조 관계는 없다 — 서로 다른 서버(Go vs Java)·다른 소유자(1번 vs 1번이지만 clip은 3번)의 표라서다. 정본 DDL 소유는 1번(Media)이지만 컬럼 추가·변경은 3번(clip이 이 표를 읽는다) 승인이 필수다(ADR-0001, 2026-08-01). PK가 (stream_id, seq) 복합이고, UNIQUE(stream_id, local_path)의 인덱스 이름 자체가 계약이다 — INSERT 충돌 시 이 이름으로 '정상 재삽입'과 'seq 충돌(단일 쓰기자 전제 붕괴)'을 가른다." },
+    { at: [2700, 60], head: "stream_segments, 알려진 구멍 셋 (media README)",
+      body: "① 경로 이력을 전부 메모리에 올린다 — 창 제한이 없어 장기 실행 시 계속 자란다. ② 사이드카가 POSTGRES_USER를 그대로 쓴다 — 이 표만 쓰는 전용 롤이 바람직하다. ③ 되돌리기가 재시도 상한(기본 3회)을 넘으면 그 4초 구간을 late_segment_skipped ERROR와 함께 포기하고 자동 복구가 없다 — 파일은 남아 있어 로그의 경로로 수동 복구해야 한다." },
   ];
 
   const world = document.getElementById("world");
@@ -245,9 +263,12 @@
     const el = document.createElement("div");
     el.className = "tbl";
     el.dataset.name = t.name;
-    // 우선순위: PK > FK > UK 계열. UK(2)·UK* 같은 변형은 그대로 보여준다.
+    // 우선순위: PK > FK > UK 계열. PK(2)·UK(2)·UK* 같은 변형은 그대로 보여준다 —
+    // stream_segments처럼 복합 PK인 표에서 "PK"만 찍으면 컬럼 하나만으로 유일한
+    // 줄 오해할 수 있다.
     const keyMark = c => {
-      if (c.keys.some(k => k.startsWith("PK"))) return '<span class="key pk">PK</span>';
+      const pk = c.keys.find(k => k.startsWith("PK"));
+      if (pk) return `<span class="key pk">${esc(pk)}</span>`;
       if (c.keys.includes("FK")) return '<span class="key fk">FK</span>';
       const uk = c.keys.find(k => k.startsWith("UK"));
       return uk ? `<span class="key uk">${esc(uk)}</span>` : "";

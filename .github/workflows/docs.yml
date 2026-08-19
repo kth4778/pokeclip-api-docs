@@ -1,19 +1,23 @@
-# pokeclip-mono의 서버 4개에서 OpenAPI 문서를 뽑아 GitHub Pages로 배포한다.
+# pokeclip-mono의 서버들에서 OpenAPI 문서·DB 스키마를 뽑아 GitHub Pages로 배포한다.
 #
 # mono 저장소는 읽기만 한다 — checkout해서 빌드할 뿐, 아무것도 push하지 않는다.
-# springdoc 의존성도 init.gradle로 빌드 순간에만 얹는다.
+# springdoc 의존성도 init.gradle로, media의 스키마 보장 프로그램도 CI 체크아웃에만
+# 얹는다(mono에는 커밋되지 않는다).
 #
 # 갱신 시점:
-#   - 매일 06:00 KST (cron은 UTC라 21:00)
-#   - Actions 탭에서 수동 실행 (Run workflow 버튼)
-#   - 이 레포의 main에 push될 때 (스크립트·화면을 고친 경우)
+#   - **10분마다 mono의 develop 최신 커밋을 확인**해 바뀌었을 때만 다시 뽑는다
+#     (check 잡). "develop에 머지될 때마다"를 정확히 하려면 mono의 워크플로가
+#     이 레포를 호출해야 하는데, mono는 팀 공용 저장소라 그 파일(.github/)을
+#     내가 단독으로 고치지 않는다 — 폴링이 팀 조율 없이 할 수 있는 최선이다.
+#   - Actions 탭에서 수동 실행 (Run workflow 버튼) — 이땐 변경 여부와 무관하게 돈다
+#   - 이 레포의 main에 push될 때 (스크립트·화면을 고친 경우) — 이때도 무조건 돈다
 name: API docs
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 21 * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,7 +30,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # mono/develop이 마지막 배포 이후 바뀌었는지만 본다. 체크아웃도 빌드도 없어
+  # 10분마다 돌아도 비용이 사실상 없다. push·workflow_dispatch는 이 결과와
+  # 무관하게 항상 배포한다(이 레포 자체를 고친 경우일 수 있어서).
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: mono develop 최신 커밋
+        id: head
+        run: |
+          sha=$(git ls-remote https://github.com/3K-PokeClip/PokeClip-mono.git refs/heads/develop | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: 마지막으로 배포한 커밋과 비교
+        id: diff
+        run: |
+          prev=$(curl -sf https://kth4778.github.io/pokeclip-api-docs/specs/mono-sha.txt || echo none)
+          if [ "$prev" = "${{ steps.head.outputs.sha }}" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -50,6 +79,7 @@ jobs:
       POSTGRES_USER: pokeclip
       POSTGRES_PASSWORD: ci-only
       POSTGRES_DB: pokeclip
+      POSTGRES_HOST: localhost # media(Go)는 기본값이 'postgres'(compose 서비스명)라 CI에선 명시해야 한다
       JWT_SECRET: ci-docs-extraction-only-not-a-real-secret!!
       GOOGLE_CLIENT_ID: ci-dummy
       GOOGLE_CLIENT_SECRET: ci-dummy
@@ -63,11 +93,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: mono 저장소 checkout (읽기 전용)
+      - name: mono 저장소 checkout (읽기 전용, develop)
         uses: actions/checkout@v4
         with:
           repository: 3K-PokeClip/PokeClip-mono
+          ref: develop
           path: mono
+
+      - name: mono 커밋 SHA 기록 (다음 폴링의 비교 기준)
+        run: mkdir -p site/specs && git -C mono rev-parse HEAD > site/specs/mono-sha.txt
 
       - uses: actions/setup-java@v4
         with:
@@ -75,6 +109,10 @@ jobs:
           java-version: "21"
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mono/media/go.mod
 
       - name: 서버 4개 bootJar 빌드 (springdoc은 init.gradle로 주입)
         working-directory: mono/services
