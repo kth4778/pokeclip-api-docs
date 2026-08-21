@@ -41,8 +41,9 @@
               padding: .45rem .7rem; background: var(--tbl-head);
               border-bottom: 1px solid #000; border-radius: 4px 4px 0 0;
               font-size: .82rem; color: #fff; }
-    .tbl h2 .ko { margin-left: auto; font-weight: 400; font-size: .72rem;
-                  color: var(--ko); }
+    .tbl h2 .phys { margin-left: auto; font-weight: 400; font-size: .74rem;
+                    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+                    color: var(--ko); }
     .row { display: grid; grid-template-columns: 26px 1fr 1fr 92px;
            align-items: center; gap: 0 .4rem; padding: .28rem .55rem;
            border-top: 1px solid var(--tbl-line); }
@@ -115,6 +116,7 @@
     pairing_codes: "페어링 코드",
     pairing_exchange_attempts: "페어링 교환 시도",
     chat_messages: "채팅 메시지",
+    chat_ended_streams: "방송 종료 메모 (선도착 표시)",
     chzzk_channel_links: "치지직 채널 연동",
     stream_segments: "방송 조각 (media 소유)",
     editor_invitations: "편집자 초대",
@@ -171,6 +173,11 @@
     "chat_messages.message_time": "치지직이 찍은 시각(UTC)",
     "chat_messages.received_at": "우리가 받은 시각(UTC) — 중앙값 175ms 늦다",
     "chat_messages.content_sha256": "본문 해시 — 중복 방어 지문의 일부",
+    "chat_messages.stream_id": "방송 한 회의 번호(계약9). NULL이면 「모른다」 — 옛 채팅과 편지 없이 붙은 경우가 그렇다. 지문 UNIQUE에는 일부러 안 넣었다(넣으면 방송 경계에서 같은 채팅이 두 번 들어간다)",
+    "chat_ended_streams.stream_id": "방송 번호. 종료 편지가 시작보다 먼저 왔을 때 이 표에 한 줄 남긴다",
+    "chat_ended_streams.last_sequence": "이 방송에서 마지막으로 반영한 순서 번호. 이보다 낮거나 같은 시작 편지는 무시한다",
+    "chat_ended_streams.ended_at": "편지에 적힌 종료 시각",
+    "chat_ended_streams.created_at": "메모를 남긴 시각. 치우는 기준이다(TTL 24시간을 이 값으로 잰다)",
     "pairing_codes.id": "코드ID",
     "pairing_codes.user_id": "회원ID — 발급받은 스트리머",
     "pairing_codes.code_hash": "코드의 SHA-256 해시",
@@ -201,39 +208,53 @@
   };
   // 처음 열었을 때의 배치. 여기 없는 새 테이블은 아래쪽에 자동으로 줄 세운다.
   const DEFAULT_POS = {
-    users: [760, 420], refresh_tokens: [1300, 60], stream_keys: [1300, 460],
-    pairing_codes: [180, 60], pairing_exchange_attempts: [180, 470],
-    secrets: [180, 760],
-    chat_messages: [400, 1160],
-    chzzk_channel_links: [1720, 60],
-    editor_invitations: [760, 60],
-    editor_delegations: [1300, 900],
-    broadcasts: [2300, 60],
-    broadcast_events: [2300, 500],
-    stream_segments: [2700, 900],
+    // 배치가 곧 선 품질이다. 아래 세 규칙을 지켜야 선이 상자를 안 뚫는다.
+    //
+    // ① 왼쪽 열은 users와 **같은 높이대**에 둔다. 위아래로 벗어나면 users로 가는
+    //    가로선의 세로 구간이 editor_invitations·editor_delegations를 관통한다.
+    // ② users 위아래에 놓는 둘은 users와 **x를 어긋나게** 둔다. x를 맞추면
+    //    그 둘을 잇는 세로 통로가 users를 정통으로 지난다.
+    // ③ 관계가 없는 표(chat_messages·broadcasts·stream_segments)는 멀찍이 뺀다.
+    //    선이 지날 일이 없으니 통로 한복판을 차지하면 손해만 본다.
+    pairing_codes: [380, 380],
+    pairing_exchange_attempts: [380, 640],
+    secrets: [380, 860],
+    editor_invitations: [940, 40],
+    editor_delegations: [940, 860],
+    users: [1440, 420],
+    refresh_tokens: [1940, 40],
+    stream_keys: [1940, 380],
+    chzzk_channel_links: [1940, 700],
+    chat_messages: [380, 1120],
+    chat_ended_streams: [940, 1420],
+    broadcasts: [2760, 40],
+    broadcast_events: [2760, 420],
+    stream_segments: [2760, 740],
   };
   const MEMOS = [
-    { at: [760, 130], head: "스트림키 비밀의 자리",
+    { at: [2400, 380], head: "스트림키 비밀의 자리",
       body: "streamid 원문·passphrase는 stream_keys에 없다 — secrets(AES-256-GCM)에만 있고 표에는 해시·참조뿐이다. 웹으로는 못 보고 페어링 코드 교환으로만 나간다." },
-    { at: [1720, 320], head: "치지직 토큰도 secrets를 쓴다",
+    { at: [2400, 700], head: "치지직 토큰도 secrets를 쓴다",
       body: "access_token_ref·refresh_token_ref는 stream_keys와 같은 방식 — 원문은 secrets에만 있다. 계정당·채널당 살아있는 연동이 하나인 것도 부분 유니크 인덱스가 DB에서 강제한다(uq_chzzk_links_alive_user·_channel) — 인스턴스가 여럿이면 애플리케이션 락만으론 안 되기 때문." },
-    { at: [400, 1420], head: "chat_messages는 FK가 없다",
+    { at: [380, 1420], head: "chat_messages는 FK가 없다",
       body: "채팅은 auth의 users와 잇지 않는다 — 시청자는 우리 회원이 아니다. 방송 한 회를 가리키는 stream_id도 아직 없다(계약9 이후). 지금 방송 경계는 channel_id다. 중복은 (channel, sender, message_time, content 해시) UNIQUE가 막는다 — 치지직이 메시지 ID를 안 준다." },
-    { at: [180, 950], head: "청소 작업 없음 (알려진 구멍)",
+    { at: [40, 640], head: "청소 작업 없음 (알려진 구멍)",
       body: "pairing_codes·pairing_exchange_attempts는 지우는 작업이 아직 없다. 교환은 미인증이라 행이 계속 쌓인다 — 운영 전에 청소 작업이 필요하다. client_ip_hash는 소금 없는 SHA-256이라 IPv4 공간(2^32)을 전수 대입하면 몇 분 안에 원문 IP로 되돌릴 수 있다 — SELECT * 노출은 막지만 '개인정보 위험을 낮춘다'는 목적은 사실상 달성 못 한다." },
-    { at: [1300, 1160], head: "위임은 초대 없이 안 생긴다",
+    { at: [940, 1120], head: "위임은 초대 없이 안 생긴다",
       body: "editor_delegations.invitation_id는 그 위임을 만든 초대를 가리킨다. 권한 등급은 없다 — 위임되면 그 스트리머에 대해 전부 할 수 있다. 해제해도 행은 지우지 않고 revoked_at·revoked_by(STREAMER=내보냄, EDITOR=나감)만 채운다." },
-    { at: [2300, 900], head: "broadcasts·broadcast_events는 auth와 안 잇는다",
+    { at: [1400, 1420], head: "chat_ended_streams는 편지가 거꾸로 올 때의 메모다",
+      body: "종료 편지가 시작보다 먼저 도착하면 여기 한 줄 남기고, 뒤늦게 온 시작을 last_sequence로 걸러 무시한다(ADR-016의 ENDED tombstone). ADR은 Redis를 지정했지만 DB에 뒀다 — 1번과 협의 대상이다. clip에도 broadcasts가 있어서 chat_ 접두어를 붙였다: DB를 네 서버가 공유하므로 접두어가 없으면 남의 표를 자기 것으로 착각한다." },
+    { at: [3160, 40], head: "broadcasts·broadcast_events는 auth와 안 잇는다",
       body: "streamer_id에 FK가 없다 — 그 표는 auth 소유고, 서로의 표를 직접 참조하지 않는 것이 ADR-022의 경계다. broadcast_events.event_id UNIQUE가 SQS 중복 수신(at-least-once)에 대한 멱등의 진짜 방어선이다. last_sequence는 이벤트가 역순으로 도착했을 때 무시하기 위한 기준이다." },
-    { at: [50, 300], head: "알려진 보안 구멍 — 초대 가로채기",
+    { at: [40, 40], head: "알려진 보안 구멍 — 초대 가로채기",
       body: "구글 로그인이 email_verified를 안 본다. editor_invitations가 이메일 정확 일치로 상대를 찾는데(V108, uq_users_email), 공격자가 피해자 주소로 먼저 가입해 두면 그 주소로 온 초대를 가로챈다 — 피해자는 나중에 그 주소로 로그인하려 해도 UNIQUE 위반으로 막힌다(가입 자체가 안 됨). 팀이 인지한 채 보류하기로 결정했다(2026-08-18). 서비스 안 할 프로젝트라 여기 그대로 적는다." },
-    { at: [50, 600], head: "secrets 키 회전 경로 없음 (알려진 구멍)",
+    { at: [40, 940], head: "secrets 키 회전 경로 없음 (알려진 구멍)",
       body: "AES-256-GCM 암호화 키를 바꾸면 기존 행을 못 푼다. key_version 컬럼을 일부러 안 넣었다 — 필요해지면 그때 DEFAULT 1로 추가해도 기존 행이 전부 v1이라는 사실은 안 깨진다(PostgreSQL 11+에서 그 ALTER는 테이블 재작성 없이 메타데이터만 바꾼다)." },
-    { at: [2000, 900], head: "broadcast_events, 두 가지 알려진 구멍",
+    { at: [3160, 380], head: "broadcast_events, 두 가지 알려진 구멍",
       body: "① schemaVersion을 읽기만 하고 검증하지 않는다 — media가 호환 안 되는 버전을 내면 현재 스키마로 처리 후 삭제해 되감을 방법이 없다(계약 미확정, contracts/sqs/ 비어있음). ② unknown_type_dropped 로그의 eventType·eventId가 외부 입력 그대로라 개행이 섞이면 로그 위조가 가능하다(발행자가 같은 팀이라 위협 수위는 낮음)." },
-    { at: [2700, 1200], head: "stream_segments는 auth·clip 어디와도 안 잇는다",
+    { at: [3160, 740], head: "stream_segments는 auth·clip 어디와도 안 잇는다",
       body: "FK가 하나도 없다. stream_id가 broadcasts.stream_id와 같은 값을 담을 수 있지만 참조 관계는 없다 — 서로 다른 서버(Go vs Java)·다른 소유자(1번 vs 1번이지만 clip은 3번)의 표라서다. 정본 DDL 소유는 1번(Media)이지만 컬럼 추가·변경은 3번(clip이 이 표를 읽는다) 승인이 필수다(ADR-0001, 2026-08-01). PK가 (stream_id, seq) 복합이고, UNIQUE(stream_id, local_path)의 인덱스 이름 자체가 계약이다 — INSERT 충돌 시 이 이름으로 '정상 재삽입'과 'seq 충돌(단일 쓰기자 전제 붕괴)'을 가른다." },
-    { at: [2700, 60], head: "stream_segments, 알려진 구멍 셋 (media README)",
+    { at: [3160, 1020], head: "stream_segments, 알려진 구멍 셋 (media README)",
       body: "① 경로 이력을 전부 메모리에 올린다 — 창 제한이 없어 장기 실행 시 계속 자란다. ② 사이드카가 POSTGRES_USER를 그대로 쓴다 — 이 표만 쓰는 전용 롤이 바람직하다. ③ 되돌리기가 재시도 상한(기본 3회)을 넘으면 그 4초 구간을 late_segment_skipped ERROR와 함께 포기하고 자동 복구가 없다 — 파일은 남아 있어 로그의 경로로 수동 복구해야 한다." },
   ];
 
@@ -248,7 +269,7 @@
   const koOf = (t, c) => c.comment || COLUMN_KO[`${t.name}.${c.name}`] || "";
 
   // ── 위치: 기본 배치 + localStorage에 저장된 사용자 배치 ──
-  const LS = "pokeclip-erd-pos-v1";
+  const LS = "pokeclip-erd-pos-v2";
   const saved = JSON.parse(localStorage.getItem(LS) || "{}");
   const pos = {};
   let autoY = 1050;
@@ -274,8 +295,8 @@
       return uk ? `<span class="key uk">${esc(uk)}</span>` : "";
     };
     el.innerHTML = `
-      <h2 title="${esc(t.comment || "")}">${esc(t.name)}
-        <span class="ko">${esc(TABLE_KO[t.name] || "")}</span></h2>
+      <h2 title="${esc(t.comment || "")}">${esc(TABLE_KO[t.name] || t.name)}
+        <span class="phys">${TABLE_KO[t.name] ? esc(t.name) : ""}</span></h2>
       ${t.columns.map(c => `
         <div class="row" data-col="${esc(c.name)}" title="${esc(koOf(t, c))}">
           ${keyMark(c)}
@@ -300,52 +321,143 @@
     world.appendChild(el);
   }
 
-  // ── 관계선: FK 행 옆구리 → 부모 상자 옆구리. 까마귀발(자식)·한 줄 막대(부모) ──
-  function anchor(el, rowSel) {
-    const x = el.offsetLeft, y = el.offsetTop,
-          w = el.offsetWidth, h = el.offsetHeight;
-    let ry = y + 16;                       // 기본: 헤더 높이쯤
-    if (rowSel) {
-      const row = el.querySelector(rowSel);
-      if (row) ry = y + row.offsetTop + row.offsetHeight / 2;
-    }
-    return { left: { x, y: ry }, right: { x: x + w, y: ry }, midY: y + h / 2 };
-  }
+  // ── 관계선 ──────────────────────────────────────────────────────
+  // erdcloud처럼 **직각으로만 꺾는다**(Manhattan 라우팅). 곡선을 쓰면 여러 선이
+  // 같은 공간을 지나며 서로 녹아 붙어 어느 선이 어디로 가는지 못 읽는다.
+  //
+  // 겹침을 줄이는 장치가 셋이다:
+  //   1. 방향 선택 — 상자 사이가 실제로 비어 있는 변끼리 잇는다(gap 검사).
+  //      후보가 여럿이면 두 상자가 더 잘 정렬된 축을 고른다.
+  //   2. 앵커 분산 — 한 변에 여러 선이 붙으면 그 변을 n등분해 나눠 붙인다.
+  //      users처럼 FK가 일곱 개 몰리는 표에서 이게 없으면 한 점에 다 겹친다.
+  //   3. 통로 분산 — 같은 변으로 가는 선들의 꺾임 좌표를 14px씩 벌린다.
+  //      안 그러면 세로 구간이 한 줄로 포개진다.
+  const STUB = 22;      // 상자에서 처음 직진하는 길이
+  const GAP_MIN = 48;   // 이만큼은 비어 있어야 그 방향으로 뺀다
+  const LANE = 14;      // 통로 간격
+
+  const rectOf = el => ({
+    x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight,
+  });
+  const rowCenterY = (el, col) => {
+    const row = el.querySelector(`.row[data-col="${CSS.escape(col)}"]`);
+    return row ? el.offsetTop + row.offsetTop + row.offsetHeight / 2
+               : el.offsetTop + 18;
+  };
+
   function drawEdges() {
-    let html = "";
+    // 1) 방향 결정 ------------------------------------------------------
+    const plans = [];
     for (const r of schema.relations) {
-      const child = boxes[r.from], parent = boxes[r.to];
-      if (!child || !parent) continue;
-      const a = anchor(child, `.row[data-col="${r.column}"]`);
-      const b = anchor(parent, null);
-      // 서로 마주 보는 옆구리를 고른다
-      const useRight = a.right.x < b.left.x - 20;
-      const useLeft = b.right.x < a.left.x - 20;
-      const p1 = useRight ? a.right : a.left;
-      const p2 = useRight ? b.left : (useLeft ? b.right : b.left);
-      const d1 = useRight ? 1 : -1;               // 자식에서 나가는 방향
-      const d2 = useRight ? -1 : (useLeft ? 1 : -1);
-      const c = 70;                                // 곡선 세기
-      html += `<path d="M ${p1.x} ${p1.y} C ${p1.x + c * d1} ${p1.y},
-                        ${p2.x + c * d2} ${p2.y}, ${p2.x} ${p2.y}"/>`;
-      // 자식 끝 까마귀발 (N쪽)
-      const fx = p1.x, fy = p1.y, s = 9 * d1;
-      html += `<path class="end" d="M ${fx + s} ${fy - 6} L ${fx} ${fy}
-                                    M ${fx + s} ${fy} L ${fx} ${fy}
-                                    M ${fx + s} ${fy + 6} L ${fx} ${fy}"/>`;
-      // 부모 끝 막대 (1쪽)
-      const bx = p2.x + 7 * d2;
-      html += `<path class="end" d="M ${bx} ${p2.y - 6} L ${bx} ${p2.y + 6}"/>`;
-      // 컬럼 라벨
-      const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2 - 6;
-      html += `<text x="${mx}" y="${my}" text-anchor="middle">${esc(r.column)}</text>`;
+      const c = boxes[r.from], p = boxes[r.to];
+      if (!c || !p) continue;
+      const cr = rectOf(c), pr = rectOf(p);
+      const dx = (pr.x + pr.w / 2) - (cr.x + cr.w / 2);
+      const dy = (pr.y + pr.h / 2) - (cr.y + cr.h / 2);
+
+      // 네 방향의 빈 공간. 양수라야 그쪽으로 곧게 뺄 수 있다.
+      const cand = [];
+      if (pr.x - (cr.x + cr.w) > GAP_MIN) cand.push({ m: "right", miss: Math.abs(dy) });
+      if (cr.x - (pr.x + pr.w) > GAP_MIN) cand.push({ m: "left", miss: Math.abs(dy) });
+      if (pr.y - (cr.y + cr.h) > GAP_MIN) cand.push({ m: "down", miss: Math.abs(dx) });
+      if (cr.y - (pr.y + pr.h) > GAP_MIN) cand.push({ m: "up", miss: Math.abs(dx) });
+      // miss가 작을수록 두 상자가 그 축으로 잘 정렬돼 있다 = 선이 덜 꺾인다.
+      cand.sort((a, b) => a.miss - b.miss);
+      // 어느 쪽도 안 비었으면(상자가 서로 겹쳐 놓였으면) 가까운 옆구리로 우회한다.
+      const mode = cand.length ? cand[0].m : (dx >= 0 ? "right" : "left");
+      plans.push({ r, c, p, cr, pr, mode, detour: cand.length === 0 });
+    }
+
+    // 2) 부모 변마다 앵커를 나눠 붙인다 ----------------------------------
+    const pGroups = {};
+    for (const pl of plans) {
+      pl.pSide = { right: "left", left: "right", down: "top", up: "bottom" }[pl.mode];
+      (pGroups[`${pl.r.to}|${pl.pSide}`] ||= []).push(pl);
+    }
+    for (const list of Object.values(pGroups)) {
+      const horiz = list[0].pSide === "left" || list[0].pSide === "right";
+      // 자식이 놓인 순서대로 붙여야 선끼리 X자로 꼬이지 않는다.
+      list.sort((a, b) => horiz ? a.cr.y - b.cr.y : a.cr.x - b.cr.x);
+      list.forEach((pl, k) => {
+        const t = (k + 1) / (list.length + 1), pr = pl.pr;
+        pl.lane = k - (list.length - 1) / 2;   // 통로 번호(가운데가 0)
+        if (pl.pSide === "left")   pl.pPt = { x: pr.x,             y: pr.y + pr.h * t, dir: -1, axis: "h" };
+        if (pl.pSide === "right")  pl.pPt = { x: pr.x + pr.w,      y: pr.y + pr.h * t, dir: +1, axis: "h" };
+        if (pl.pSide === "top")    pl.pPt = { x: pr.x + pr.w * t,  y: pr.y,            dir: -1, axis: "v" };
+        if (pl.pSide === "bottom") pl.pPt = { x: pr.x + pr.w * t,  y: pr.y + pr.h,     dir: +1, axis: "v" };
+      });
+    }
+
+    // 3) 자식 앵커 — 옆으로 나갈 때는 그 FK 행에서 정확히 출발한다 --------
+    const cGroups = {};
+    for (const pl of plans) {
+      const cr = pl.cr;
+      if (pl.mode === "right" || pl.mode === "left" || pl.detour) {
+        const dir = (pl.mode === "left" || (pl.detour && pl.mode === "left")) ? -1 : +1;
+        pl.cPt = { x: dir > 0 ? cr.x + cr.w : cr.x, y: rowCenterY(pl.c, pl.r.column), dir, axis: "h" };
+      } else {
+        pl.cSide = pl.mode === "down" ? "bottom" : "top";
+        (cGroups[`${pl.r.from}|${pl.cSide}`] ||= []).push(pl);
+      }
+    }
+    for (const list of Object.values(cGroups)) {
+      list.sort((a, b) => a.pr.x - b.pr.x);
+      list.forEach((pl, k) => {
+        const t = (k + 1) / (list.length + 1), cr = pl.cr;
+        pl.cPt = pl.cSide === "bottom"
+          ? { x: cr.x + cr.w * t, y: cr.y + cr.h, dir: +1, axis: "v" }
+          : { x: cr.x + cr.w * t, y: cr.y,        dir: -1, axis: "v" };
+      });
+    }
+
+    // 4) 직각 경로 + 끝 표시 ---------------------------------------------
+    let html = "";
+    for (const pl of plans) {
+      const a = pl.cPt, b = pl.pPt, off = (pl.lane || 0) * LANE;
+      let d;
+      if (pl.detour) {
+        // 상자가 겹쳐 놓였다 — 둘 다 바깥으로 빼서 돌아간다.
+        const outX = Math.min(pl.cr.x, pl.pr.x) - 56 + off;
+        d = `M ${a.x} ${a.y} L ${outX} ${a.y} L ${outX} ${b.y} L ${b.x} ${b.y}`;
+      } else if (a.axis === "h" && b.axis === "h") {
+        const mid = (a.x + a.dir * STUB + b.x + b.dir * STUB) / 2 + off;
+        d = `M ${a.x} ${a.y} L ${mid} ${a.y} L ${mid} ${b.y} L ${b.x} ${b.y}`;
+      } else if (a.axis === "v" && b.axis === "v") {
+        const mid = (a.y + a.dir * STUB + b.y + b.dir * STUB) / 2 + off;
+        d = `M ${a.x} ${a.y} L ${a.x} ${mid} L ${b.x} ${mid} L ${b.x} ${b.y}`;
+      } else if (a.axis === "h") {           // 옆으로 나가서 위/아래로 들어간다
+        const sx = a.x + a.dir * STUB + off;
+        d = `M ${a.x} ${a.y} L ${sx} ${a.y} L ${sx} ${b.y + b.dir * STUB} L ${b.x} ${b.y + b.dir * STUB} L ${b.x} ${b.y}`;
+      } else {                                // 위/아래로 나가서 옆으로 들어간다
+        const sy = a.y + a.dir * STUB + off;
+        d = `M ${a.x} ${a.y} L ${a.x} ${sy} L ${b.x + b.dir * STUB} L ${b.x + b.dir * STUB} ${b.y} L ${b.x} ${b.y}`;
+        // 위 한 줄이 좌표를 흘리기 쉬워 명시적으로 다시 만든다.
+        d = `M ${a.x} ${a.y} L ${a.x} ${sy} L ${b.x + b.dir * STUB} ${sy} `
+          + `L ${b.x + b.dir * STUB} ${b.y} L ${b.x} ${b.y}`;
+      }
+      html += `<path d="${d}"/>`;
+
+      // 자식 끝 = 까마귀발(N쪽). 선이 나가는 축에 맞춰 벌린다.
+      const s = 10;
+      html += a.axis === "h"
+        ? `<path class="end" d="M ${a.x + s * a.dir} ${a.y - 6} L ${a.x} ${a.y}
+                                M ${a.x + s * a.dir} ${a.y}     L ${a.x} ${a.y}
+                                M ${a.x + s * a.dir} ${a.y + 6} L ${a.x} ${a.y}"/>`
+        : `<path class="end" d="M ${a.x - 6} ${a.y + s * a.dir} L ${a.x} ${a.y}
+                                M ${a.x}     ${a.y + s * a.dir} L ${a.x} ${a.y}
+                                M ${a.x + 6} ${a.y + s * a.dir} L ${a.x} ${a.y}"/>`;
+
+      // 부모 끝 = 한 줄 막대(1쪽).
+      html += b.axis === "h"
+        ? `<path class="end" d="M ${b.x + 8 * b.dir} ${b.y - 6} L ${b.x + 8 * b.dir} ${b.y + 6}"/>`
+        : `<path class="end" d="M ${b.x - 6} ${b.y + 8 * b.dir} L ${b.x + 6} ${b.y + 8 * b.dir}"/>`;
     }
     edges.innerHTML = html;
   }
   drawEdges();
 
   // ── 뷰: 이동(팬) + 확대/축소 ──
-  const VS = "pokeclip-erd-view-v1";
+  const VS = "pokeclip-erd-view-v2";
   let view = JSON.parse(localStorage.getItem(VS) || "null") || { x: 20, y: 20, z: .8 };
   const apply = () => {
     world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
