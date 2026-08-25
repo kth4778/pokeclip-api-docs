@@ -89,6 +89,13 @@ jobs:
       CHZZK_CLIENT_ID: ci-dummy
       CHZZK_CLIENT_SECRET: ci-dummy
       CHZZK_REDIRECT_URI: http://localhost:3000/chzzk/callback
+      # 유튜브 연동(POK-121, 2026-08-25). 치지직과 같이 셋이 한 덩어리다.
+      YOUTUBE_CLIENT_ID: ci-dummy
+      YOUTUBE_CLIENT_SECRET: ci-dummy
+      YOUTUBE_REDIRECT_URI: http://localhost:3000/youtube/callback
+      # clip이 auth를 부르기 시작하며(POK-175 판정 창구 소비) 새로 필수가 된 값.
+      # 비면 DelegationResolveClient 생성자가 부팅을 막는다.
+      AUTH_BASE_URL: http://localhost:8082
 
     steps:
       - uses: actions/checkout@v4
