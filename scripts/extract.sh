@@ -15,9 +15,12 @@ OUT="${OUT_DIR:-site/specs}"
 mkdir -p "$OUT"
 
 # 이름 | 포트 | 인증 토큰 필요 여부
+# clip도 jwt다 — 2026-08-25에 clip에 SecurityConfig가 생기면서 /v3/api-docs가
+# anyRequest().authenticated()에 걸리게 됐다(그전엔 인증이 아예 없어 none이 맞았다).
+# auth와 **같은 대칭키(HS256)**로 검증만 하므로 mint_jwt.py가 만든 토큰이 그대로 통한다.
 SERVERS=(
   "auth|8082|jwt"
-  "clip|8081|none"
+  "clip|8081|jwt"
   "chat-collector|8083|none"
   "chat-detector|8084|none"
 )
