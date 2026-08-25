@@ -22,6 +22,12 @@ SERVERS=(
   "chat-detector|8084|none"
 )
 
+# 🔴 -Dspringdoc.use-fqn=true 는 지우면 안 된다.
+# springdoc은 스키마 키를 **클래스 simple name**으로 만든다. auth에는 chzzk와 youtube가
+# 같은 이름의 DTO를 각자 갖고 있어서(LinkRequest·LinkResponse·LinkStatusResponse·StartResponse)
+# 끄면 넷이 서로를 덮어쓴다 — 2026-08-25 실측에서 치지직의 LinkStatusResponse가 유튜브 것으로
+# 덮여 **치지직에만 있는 EXPIRED 상태가 문서에서 사라졌다.** 오류도 경고도 없이 조용히 그렇게 된다.
+# FQN으로 뽑은 뒤 postprocess.py가 ChzzkLinkStatusResponse처럼 읽기 좋은 이름으로 되돌린다.
 extract_one() {
   local name="$1" port="$2" auth="$3"
   local jar log="/tmp/${name}.log" pid
@@ -33,9 +39,9 @@ extract_one() {
   # 이력표(flyway_schema_history_clip)가 없어 "non-empty schema"로 부팅을
   # 거부하기 때문이다. 추출용 DB는 일회용이라 baseline의 부작용이 없다.
   if [ "$name" = "clip" ]; then
-    SPRING_FLYWAY_BASELINE_ON_MIGRATE=true java -jar "$jar" >"$log" 2>&1 &
+    SPRING_FLYWAY_BASELINE_ON_MIGRATE=true java -Dspringdoc.use-fqn=true -jar "$jar" >"$log" 2>&1 &
   else
-    java -jar "$jar" >"$log" 2>&1 &
+    java -Dspringdoc.use-fqn=true -jar "$jar" >"$log" 2>&1 &
   fi
   pid=$!
 
