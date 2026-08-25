@@ -851,6 +851,11 @@ def shorten_schema_names(doc):
       - 겹치면 → 패키지의 기능 조각을 앞에 붙인다 (`ChzzkLinkRequest`·`YoutubeLinkRequest`)
     """
     schemas = doc.get("components", {}).get("schemas", {})
+    # 스키마가 하나도 없는 서버가 있다(chat-detector는 아직 코드가 없다).
+    # 여기서 안 막으면 아래 doc["components"]["schemas"]가 KeyError로 터지고
+    # **배포 전체가 죽는다** — 2026-08-25에 실제로 그랬다.
+    if not schemas:
+        return {}
     by_simple = {}
     for fq in schemas:
         by_simple.setdefault(fq.rsplit(".", 1)[-1], []).append(fq)
