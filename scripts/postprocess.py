@@ -96,8 +96,10 @@ OPS["auth"] = {
     ),
     ("/api/auth/me", "get"): (
         "내 정보 조회",
-        "access 토큰의 주인 정보를 돌려준다.",
-        [{"bearerAuth": []}], "인증", {"401": AUTH_ERR},
+        "access 토큰의 주인 정보를 돌려준다. **회원 번호를 넘기지 않는다** — 토큰이 누구인지를 정한다.\n\n"
+        "`profileImageUrl`이 **10분마다 바뀐다**(직접 올린 사진일 때). 그래서 이 응답을 "
+        "화면 상태에 통째로 덮어써도 그림이 깜빡이지 않는다 — 10분 안에는 같은 글자가 나온다.",
+        [{"bearerAuth": []}], "내 정보", {"401": AUTH_ERR},
     ),
     ("/api/auth/refresh", "post"): (
         "토큰 재발급 (회전)",
@@ -112,6 +114,62 @@ OPS["auth"] = {
         "로그아웃",
         "refresh 토큰을 폐기한다.\n\n**없는 토큰으로 불러도 204다.** 토큰의 존재 여부를 알려주지 않는다.",
         [], "인증", {"401": AUTH_ERR},
+    ),
+    ("/api/auth/me", "patch"): (
+        "내 이름 수정",
+        "표시 이름만 바꾼다. **사진은 이 문이 아니다** — 본문 형식이 달라 "
+        "`PUT /api/auth/me/photo`로 갈라져 있다.\n\n"
+        "누구를 고칠지는 **토큰이 정한다.** 본문에 `userId`를 실어도 무시된다.\n\n"
+        "**앞뒤 공백은 서버가 잘라 낸다** — 전각 공백·NBSP·제로폭 공백까지 자른다. "
+        "자르고 나서 보이는 글자가 없으면 `NAME_BLANK`다.\n\n"
+        "**길이는 30자**다. 이모지 하나가 1자로 센다(코드 포인트 기준).\n\n"
+        "**응답은 `GET /api/auth/me`와 똑같은 모양**이라 그대로 상태에 덮어쓰면 된다 — "
+        "고친 뒤 다시 조회할 필요가 없다.",
+        [{"bearerAuth": []}], "내 정보",
+        {"400": key_err(
+            "이름이 규칙에 안 맞는다. **`reason`으로 갈라 안내한다** — "
+            "`NAME_BLANK`(비었다) · `NAME_TOO_LONG`(30자 초과) · "
+            "`NAME_INVALID_CHARACTER`(줄바꿈·탭 같은 제어문자가 섞였다). "
+            "**거부된 이름은 응답에 안 실린다.**", "NAME_TOO_LONG"),
+         "401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/auth/me/photo", "put"): (
+        "프로필 사진 올리기",
+        "**`multipart/form-data`다.** 파트 이름은 `file` 하나뿐이다.\n\n"
+        "**PUT인 이유** — 사람마다 사진이 하나고 덮어쓴다. 여러 번 눌러도 결과가 같다.\n\n"
+        "받는 형식은 **PNG·JPEG·WebP** 셋이고, **파일 크기는 2MB**까지다"
+        "(멀티파트 전체로는 3MB).\n\n"
+        "🔴 **확장자나 Content-Type을 보지 않는다** — 파일 앞부분의 실제 바이트로 판정한다. "
+        "`.png`로 이름을 바꾼 다른 파일은 415로 거절된다.\n\n"
+        "**응답이 바로 새 사진 주소를 싣는다**(`GET /api/auth/me`와 같은 모양) — "
+        "올린 뒤 다시 조회하지 말고 이 응답으로 화면을 갈아 끼우면 된다.\n\n"
+        "**사진을 올리면 구글 사진 주소는 지워진다.** 되돌리는 문은 없다.",
+        [{"bearerAuth": []}], "내 정보",
+        {"401": UNAUTHORIZED_JWT,
+         "413": key_err("파일이 2MB를 넘는다. 화면은 「줄여서 다시」를 안내한다.", "PHOTO_TOO_LARGE"),
+         "415": key_err("그림이 아니다. 앞부분 바이트가 PNG·JPEG·WebP 중 무엇도 아니다.",
+                        "PHOTO_NOT_AN_IMAGE"),
+         "503": key_err("사진 창고(S3)가 꺼져 있다. **사용자 잘못이 아니다** — "
+                        "화면은 「잠시 뒤 다시」를 안내한다. 로컬·CI의 기본 상태이기도 하다.",
+                        "PHOTO_STORAGE_DISABLED")},
+    ),
+    ("/api/profile-photos/{userId}", "get"): (
+        "프로필 사진 내려받기",
+        "**JSON이 아니라 이미지 바이트를 그대로 준다.** `<img src=...>`에 그대로 넣는 주소다.\n\n"
+        "🔴 **이 주소를 직접 조립하지 마라.** `GET /api/auth/me`·수정·업로드 응답의 "
+        "`profileImageUrl`을 **받은 그대로** 쓴다 — 뒤에 붙은 `token`이 서명값이라 "
+        "손으로 만들 수 없다.\n\n"
+        "**토큰 없이 열리는 유일한 문이다**(로그인 안 해도 된다). 그림 태그는 인증 헤더를 "
+        "못 싣기 때문이고, 그래서 자격을 주소에 실린 표가 대신한다 — 그 표로 열 수 있는 것은 "
+        "사진 한 장뿐이고 **10분이면 죽는다.**\n\n"
+        "**주소는 10분 동안 안 바뀐다** — 회원 정보를 자주 다시 불러도 브라우저가 같은 그림을 "
+        "다시 받지 않는다. 사진을 바꾸면 즉시 다른 주소가 된다.",
+        [], "내 정보",
+        {"404": {"description":
+                 "🔴 **거절이 전부 여기로 온다** — 표가 틀렸든, 만료됐든, 그 사람이 사진을 "
+                 "안 올렸든, 그런 회원이 아예 없든 **응답이 똑같다.** 갈라 주면 "
+                 "「그 사람이 사진을 올렸는가」가 새어 나가기 때문이다. "
+                 "화면은 이 경우 이니셜을 그리면 된다."}},
     ),
     ("/api/stream-keys", "get"): (
         "스트림키 발급 여부 조회",
@@ -358,6 +416,13 @@ OK_DESC = {}
 OK_DESC["auth"] = {
     ("/api/auth/google", "post", "200"): "로그인 성공. 토큰 한 쌍을 돌려준다.",
     ("/api/auth/me", "get", "200"): "조회 성공.",
+    ("/api/auth/me", "patch", "200"): "수정 완료. **바뀐 정보를 그대로 돌려준다** — 다시 조회하지 않아도 된다.",
+    ("/api/auth/me/photo", "put", "200"):
+        "업로드 완료. **새 사진 주소가 실린 회원 정보**를 돌려준다 — 이 응답으로 화면을 갈아 끼운다.",
+    ("/api/profile-photos/{userId}", "get", "200"):
+        "이미지 바이트. **JSON이 아니다** — `Content-Type`은 우리가 판정한 형식"
+        "(`image/png`·`image/jpeg`·`image/webp`)이고, 브라우저가 내용으로 다시 추측하지 못하게 "
+        "`X-Content-Type-Options: nosniff`를 함께 보낸다.",
     ("/api/auth/refresh", "post", "200"): "회전 성공. 새 토큰 한 쌍을 돌려준다.",
     ("/api/auth/logout", "post", "204"): "폐기 완료. 본문이 없다.",
     ("/api/stream-keys", "get", "200"): "조회 성공.",
@@ -405,11 +470,25 @@ FIELDS["auth"] = {
         "refreshToken": "재발급에 쓰는 토큰. **14일**. 서버에는 SHA-256 해시만 저장된다.",
     },
     "MeResponse": {
-        "_": "로그인한 사용자 정보.",
-        "id": "사용자 id. access 토큰의 sub와 같은 값이다.",
-        "email": "구글 계정 이메일.",
-        "name": "구글 프로필 이름.",
-        "profileImageUrl": "구글 프로필 사진 주소.",
+        "_": "로그인한 사용자 정보. **조회·이름 수정·사진 업로드가 전부 이 모양으로 답한다** — "
+             "고친 뒤 다시 조회할 필요가 없다.",
+        "id": "회원 번호. access 토큰의 `sub`와 같은 값이고 **서비스 전체에서 유일하다.** "
+              "편집자 위임·점프카드의 `claimedBy`가 가리키는 것도 이 번호다.",
+        "email": "구글 계정 이메일. **바꿀 수 없다** — 편집자 초대가 이 값으로 상대를 찾는다.",
+        "name": "표시 이름. 처음엔 구글 프로필 이름이고 `PATCH /api/auth/me`로 바꾼다. "
+                "**재로그인해도 구글 값으로 되돌아가지 않는다.**",
+        "profileImageUrl": "그림 태그에 그대로 넣는 주소.\n\n"
+                           "**두 종류가 같은 칸으로 온다** — 사진을 올렸으면 우리 주소"
+                           "(`/api/profile-photos/{id}?token=...`), 안 올렸으면 구글 주소다. "
+                           "화면은 구분할 필요가 없다.\n\n"
+                           "🔴 **`null`일 수 있다** — 구글이 사진을 안 줬거나, 올린 사진의 창고가 "
+                           "꺼져 있을 때다. 그때는 이니셜을 그린다.\n\n"
+                           "**직접 조립하지 마라.** 뒤의 `token`이 서명값이다.",
+    },
+    "UpdateNameRequest": {
+        "_": "이름 수정 요청. **`userId`를 실어도 무시된다** — 누구를 고칠지는 토큰이 정한다.",
+        "name": "새 표시 이름. 앞뒤 공백은 서버가 자르고, 자른 뒤 **1~30자**여야 한다"
+                "(이모지 하나 = 1자). 줄바꿈·탭 같은 제어문자는 거절된다.",
     },
     "RefreshRequest": {
         "_": "재발급·로그아웃 공용 요청.",
@@ -588,9 +667,37 @@ FIELDS["auth"] = {
     },
 }
 
+# 경로·쿼리 파라미터 설명. springdoc은 이름과 타입만 뽑아 주고 **뜻은 못 만든다** —
+# 프론트가 "여기 뭘 넣어야 하나"를 코드를 읽지 않고 알 수 있어야 해서 손으로 적는다.
+#   PARAMS[서버][(경로, 메서드)] = {파라미터 이름: 설명}
+PARAMS = {}
+
+PARAMS["auth"] = {
+    ("/api/profile-photos/{userId}", "get"): {
+        "userId": "사진 주인의 회원 번호. **직접 넣지 말고** `profileImageUrl`을 통째로 쓴다.",
+        "token": "주소에 딸려 오는 서명값. **손으로 만들 수 없고** 10분이면 죽는다. "
+                 "없거나 틀리면 404다(있는 사진인지도 안 알려준다).",
+    },
+    ("/api/editor-invitations/{id}", "delete"): {
+        "id": "취소할 초대의 번호. `GET /api/editor-invitations/sent`의 `id`다.",
+    },
+    ("/api/editor-invitations/{id}/accept", "post"): {
+        "id": "수락할 초대의 번호. `GET /api/editor-invitations/received`의 `id`다.",
+    },
+    ("/api/editor-invitations/{id}/decline", "post"): {
+        "id": "거절할 초대의 번호. `GET /api/editor-invitations/received`의 `id`다.",
+    },
+    ("/api/editor-delegations/{id}", "delete"): {
+        "id": "해제할 위임의 번호. **초대 번호가 아니다** — "
+              "`as-streamer`·`as-editor` 목록의 `id`를 쓴다.",
+    },
+}
+
 TAGS = {}
 TAGS["auth"] = [
     {"name": "인증", "description": "구글 로그인과 토큰 수명 관리."},
+    {"name": "내 정보", "description": "로그인한 사람의 이름·사진. 조회·수정·사진 올리기가 여기 있고, "
+                                    "사진을 내보내는 공개 주소도 같이 둔다."},
     {"name": "스트림키", "description": "OBS 송출용 비밀번호의 발급·재발급·플러그인 전달."},
     {"name": "치지직 연동", "description": "치지직 채널을 계정에 묶는다. 로그인(구글)과는 별개다."},
     {"name": "편집자 위임", "description": "스트리머가 편집자를 이메일로 초대하고, 수락하면 위임이 생긴다. "
@@ -608,7 +715,77 @@ NO_CONTENT = {
 
 
 # ─────────────────────────── clip (8081) ───────────────────────────
+
+def clip_err(desc, code, extra=None):
+    """clip의 오류 봉투는 전부 `{"error": "..."}` 한 모양이다(칸이 더 붙는 것도 있다)."""
+    example = {"error": code}
+    if extra:
+        example.update(extra)
+    props = {"error": {"type": "string"}}
+    if extra:
+        props.update({k: {"type": "string"} for k in extra})
+    return {"description": desc,
+            "content": {"application/json": {
+                "schema": {"type": "object", "properties": props}, "example": example}}}
+
+
+# 🔴 자격이 없는 것과 방송이 없는 것이 **같은 404**다. 갈라 주면 남의 방송 이름을 넣어 보는
+# 것만으로 그 방송의 실재를 알 수 있어서다. 응답 시간까지 맞춰 두었다.
+CLIP_404 = clip_err(
+    "그런 방송이 없거나, **볼 자격이 없다.** 🔴 **둘을 구분해 주지 않는다** — "
+    "남의 방송 번호를 넣어 보는 것만으로 그 방송의 존재를 알 수 없게 하려는 것이다. "
+    "화면은 「없는 방송입니다」 하나로 안내하면 된다.", "broadcast_not_found")
+
+CLIP_503_AUTH = clip_err(
+    "**자격을 확인하지 못했다** — auth 서버에 못 닿았다. 🔴 **「권한 없음」이 아니다.** "
+    "빈 목록이나 404로 접지 말고 「잠시 뒤 다시」를 안내한다 — 그러지 않으면 서버가 살아난 뒤에도 "
+    "사용자가 다시 시도하지 않는다.", "authorization_unavailable")
+
+CLIP_401 = {"description": "access 토큰이 없거나 유효하지 않다."}
+
+CLIP_400_FIELD = clip_err(
+    "요청 값이 잘못됐다. **`field`가 어느 칸인지 알려준다.**", "invalid_request", {"field": "limit"})
+
 OPS["clip"] = {
+    ("/api/clip/broadcasts", "get"): (
+        "방송 목록 조회",
+        "**편집자가 홈 화면을 열 때 처음 부르는 문.** 내가 볼 수 있는 스트리머들의 방송을 준다 — "
+        "내 방송과, 나를 편집자로 위임한 스트리머의 방송이 함께 온다.\n\n"
+        "**「방송 중」과 「지난 방송」을 한 목록에 안 섞는다**(`state`가 필수인 이유). "
+        "섞으면 오래 켜 둔 방송이 첫 장 밖으로 밀려 라이브 표시가 안 뜬다.\n\n"
+        "**최신 방송이 먼저 온다.**\n\n"
+        "**다음 장은 `nextCursor`를 그대로 되돌려 넣는다** — 풀어 보거나 만들지 않는다. "
+        "`null`이면 마지막 장이다.\n\n"
+        "🔴 **누구 것을 볼지는 토큰이 정한다.** 스트리머 번호를 넘기는 칸이 없다.",
+        [{"bearerAuth": []}], "편집기",
+        {"400": clip_err(
+            "요청 값이 잘못됐다. `field`가 어느 칸인지 알려준다 — "
+            "`state`(`live`·`past` 말고 다른 값. **대소문자를 가린다**) · "
+            "`limit`(0 이하) · `cursor`(우리가 준 표시가 아니다. **카드 목록에서 받은 표시를 "
+            "여기 넣어도 400이다**).", "invalid_request", {"field": "state"}),
+         "401": CLIP_401,
+         "503": CLIP_503_AUTH},
+    ),
+    ("/api/clip/broadcasts/{streamId}/jump-cards", "get"): (
+        "점프카드 목록 조회",
+        "**방송 화면을 열 때 지금까지의 카드를 받아 가는 문.**\n\n"
+        "🔴 **실시간 통로(SSE)와 짝이다.** 통로는 「이 뒤로 생긴 것」만 주므로, 화면은 "
+        "**통로를 먼저 열고 → 이 문으로 지금까지의 카드를 받는다.** 순서를 뒤집으면 "
+        "그 사이에 생긴 카드를 놓친다. 겹쳐 오는 것은 `id`로 덮어쓴다.\n\n"
+        "**카드 한 장의 모양이 통로로 오는 것과 칸 하나까지 같다.**\n\n"
+        "**방송 시간 순(빠른 것 먼저)으로 온다** — 영상 타임라인에 그대로 얹는 순서다.\n\n"
+        "**숨긴 카드는 기본으로 빠진다.** `includeHidden=true`로 함께 받는다.\n\n"
+        "**다음 장은 `nextCursor`를 그대로 되돌려 넣는다.** `null`이면 마지막 장이다.",
+        [{"bearerAuth": []}], "편집기",
+        {"400": clip_err(
+            "요청 값이 잘못됐다. `field`가 어느 칸인지 알려준다 — "
+            "`limit`(0 이하) · `cursor`(우리가 준 표시가 아니다. **방송 목록에서 받은 표시를 "
+            "여기 넣어도 400이다**) · `includeHidden`(true·false가 아니다).",
+            "invalid_request", {"field": "limit"}),
+         "401": CLIP_401,
+         "404": CLIP_404,
+         "503": CLIP_503_AUTH},
+    ),
     ("/api/clip/broadcasts/{streamId}/segments", "get"): (
         "구간 조각 조회",
         "편집기가 **「이 구간을 지금 볼 수 있나」**를 묻는 문이다. `startMs`~`endMs`에 걸친 "
@@ -620,22 +797,42 @@ OPS["clip"] = {
         "**S3 키는 주지 않는다.** 버킷이 비공개라 지금 줘도 화면이 못 쓰고, 우리 버킷 이름 규칙만 "
         "밖으로 나간다. 조각은 `seq`로 가리킨다.",
         [{"bearerAuth": []}], "편집기",
-        {"401": {"description": "access 토큰이 없거나 유효하지 않다."},
-         "403": {"description": "이 방송을 볼 권한이 없다(auth의 위임 판정 결과)."},
-         "404": {"description": "그런 방송이 없거나, 볼 수 있는 기한(VOD 보관 기간)이 지났다."}},
+        {"400": clip_err("구간이 잘못됐다 — `startMs >= endMs`이거나, 음수이거나, "
+                         "**폭이 30분을 넘는다.** `field`가 어느 칸인지 알려준다.",
+                         "invalid_request", {"field": "endMs"}),
+         "401": CLIP_401,
+         "404": CLIP_404,
+         "410": clip_err("**보관 기한이 지났다.** 방송 기록은 남아 있지만 영상은 이미 지워졌다 — "
+                         "404와 갈라 주는 이유가 그것이다(「없는 방송」이 아니다). "
+                         "화면은 「보관 만료」를 그린다.", "vod_expired"),
+         "503": CLIP_503_AUTH},
     ),
     ("/api/clip/broadcasts/{streamId}/events", "get"): (
         "점프카드 실시간 수신 (SSE)",
         "🔴 **일반 JSON API가 아니다. SSE(Server-Sent Events)** — 연결을 열어 두면 서버가 "
         "카드를 밀어 준다. `Content-Type: text/event-stream`.\n\n"
-        "연결하는 순간 **현재 카드 전부를 스냅샷으로 먼저** 받고, 그 뒤로 새 카드·변경이 이어서 온다.\n\n"
+        "🔴 **연결해도 지금 있는 카드는 안 온다. 여기서 오는 것은 「이 뒤로 생기거나 바뀐 것」뿐이다.**\n\n"
+        "**그래서 화면은 두 문을 같이 쓴다** — 순서가 정해져 있다:\n"
+        "1. 먼저 **이 통로를 연다**\n"
+        "2. 그 다음 `GET /api/clip/broadcasts/{streamId}/jump-cards`로 지금까지의 카드를 받는다\n\n"
+        "**통로가 먼저인 이유** — 목록을 받는 동안 새로 생긴 카드를 놓치지 않으려는 것이다. "
+        "반대로 하면 그 사이의 카드가 영영 안 온다. 겹쳐 오는 카드는 `id`로 덮어쓰면 된다.\n\n"
+        "각 이벤트의 `data`는 **카드 한 장**이고, 목록 문이 주는 카드와 **칸 하나까지 같은 모양**이다.\n\n"
         "방송이 끝나면 `ended` 이벤트가 오고 서버가 연결을 닫는다. "
-        "연결 수명은 최대 **4시간**이고, access 토큰이 먼저 만료되면 그 시점에 닫힌다.\n\n"
-        "`Last-Event-ID` 헤더(또는 `lastEventId` 파라미터)를 받긴 하지만 **지금은 쓰지 않는다** — "
-        "재연결 때도 전체 스냅샷을 다시 보낸다.",
+        "연결 수명은 최대 **4시간**이고, access 토큰이 먼저 만료되면 **그 시점에 닫힌다** — "
+        "화면은 새 토큰으로 다시 연결한다.\n\n"
+        "`Last-Event-ID` 헤더(또는 `lastEventId` 파라미터)를 받긴 하지만 **지금은 아무 일도 안 한다.** "
+        "재연결 뒤 빠진 카드를 메우는 것은 목록 문의 몫이다.",
         [{"bearerAuth": []}], "편집기",
-        {"401": {"description": "access 토큰이 없거나 유효하지 않다."},
-         "404": {"description": "그런 방송이 없다."}},
+        {"401": clip_err("access 토큰이 없거나, 유효하지 않거나, **이미 만료됐다**"
+                         "(`token_expired`). 새 토큰으로 다시 연결한다.", "token_expired"),
+         "404": CLIP_404,
+         "503": clip_err(
+             "동시 연결 상한에 걸렸다. **`scope`가 무엇에 걸렸는지 알려준다** — "
+             "`user`(이 사람이 탭을 너무 많이 열었다 → 「다른 탭을 닫아라」) · "
+             "`stream`(이 방송에 사람이 몰렸다) · `total`(서버 전체) → 뒤 둘은 「잠시 뒤 다시」다.\n\n"
+             "**본문은 JSON이다** — 연결이 서기 전에 끝나므로 event-stream이 아니다.",
+             "stream_limit", {"scope": "user"})},
     ),
     ("/api/clip/jump-cards/{id}/claim", "post"): (
         "점프카드 집기",
@@ -644,37 +841,51 @@ OPS["clip"] = {
         "집은 상태에는 **시한(TTL)이 있다** — `claimExpiresAt`이 지나면 자동으로 풀린 것으로 본다. "
         "치우는 배경 작업이 없어서 집을 때 판정하므로, 그 값은 표에 저장된 값이 아니라 계산값이다.",
         [{"bearerAuth": []}], "편집기",
-        {"401": {"description": "access 토큰이 없거나 유효하지 않다."},
-         "403": {"description": "이 방송을 볼 권한이 없다."},
-         "404": {"description": "그런 카드가 없다."},
-         "409": {"description": "다른 사람이 이미 집었고 아직 시한이 안 지났다."}},
+        {"401": CLIP_401,
+         "404": clip_err(
+             "그런 카드가 없거나, **이 방송을 볼 자격이 없다.** 🔴 **구분해 주지 않는다** — 카드 번호를 훑어 보는 것도 같은 종류의 탐색이라서다.", "jump_card_not_found"),
+         "409": {"description":
+                 "다른 사람이 이미 집었고 아직 시한이 안 지났다.\n\n"
+                 "🔴 **본문이 오류 봉투가 아니라 「현재 카드」다** — 누가 언제까지 잡고 있는지가 "
+                 "그대로 실려 온다. 화면은 다시 조회하지 말고 이 응답으로 카드를 갱신하면 된다.",
+                 "content": {"application/json": {
+                     "schema": {"$ref": "#/components/schemas/JumpCardSnapshot"}}}},
+         "503": CLIP_503_AUTH},
     ),
     ("/api/clip/jump-cards/{id}/claim", "delete"): (
         "점프카드 놓기",
-        "집은 것을 스스로 푼다. 시한이 지나기를 기다리지 않고 바로 남에게 넘길 때 쓴다.",
+        "집은 것을 스스로 푼다. 시한이 지나기를 기다리지 않고 바로 남에게 넘길 때 쓴다.\n\n"
+        "**아무도 안 집은 카드를 놓아도 204다** — 화면이 상태를 먼저 확인할 필요가 없다.",
         [{"bearerAuth": []}], "편집기",
-        {"401": {"description": "access 토큰이 없거나 유효하지 않다."},
-         "403": {"description": "이 방송을 볼 권한이 없다."},
-         "404": {"description": "그런 카드가 없다."}},
+        {"401": CLIP_401,
+         "403": clip_err("**남이 집은 카드는 못 놓는다.** 이 문은 「내가 집은 것을 내가 푼다」 전용이다.",
+                         "not_claim_owner"),
+         "404": clip_err(
+             "그런 카드가 없거나, **이 방송을 볼 자격이 없다.** 🔴 **구분해 주지 않는다** — 카드 번호를 훑어 보는 것도 같은 종류의 탐색이라서다.", "jump_card_not_found"),
+         "503": CLIP_503_AUTH},
     ),
     ("/api/clip/jump-cards/{id}/hide", "post"): (
         "점프카드 숨기기",
         "쓸모없는 카드를 목록에서 치운다. **행을 지우지 않고 `hidden` 표시만 한다** — "
-        "판별기가 왜 이걸 골랐는지 나중에 되짚을 수 있어야 해서다.",
+        "판별기가 왜 이걸 골랐는지 나중에 되짚을 수 있어야 해서다.\n\n"
+        "숨긴 카드는 목록 문의 기본 응답에서 빠진다 — `includeHidden=true`로 다시 부르면 보인다.",
         [{"bearerAuth": []}], "편집기",
-        {"401": {"description": "access 토큰이 없거나 유효하지 않다."},
-         "403": {"description": "이 방송을 볼 권한이 없다."},
-         "404": {"description": "그런 카드가 없다."}},
+        {"401": CLIP_401,
+         "404": clip_err(
+             "그런 카드가 없거나, **이 방송을 볼 자격이 없다.** 🔴 **구분해 주지 않는다** — 카드 번호를 훑어 보는 것도 같은 종류의 탐색이라서다.", "jump_card_not_found"),
+         "503": CLIP_503_AUTH},
     ),
     ("/api/clip/jump-cards/{id}/hide", "delete"): (
         "점프카드 되돌리기",
         "숨긴 것을 다시 꺼낸다.\n\n"
         "**숨긴 사람이 아니어도 누구나 되돌릴 수 있다** — 숨긴 사람만 가능하게 하면 "
-        "그 사람이 자리를 비웠을 때 아무도 못 되돌린다.",
+        "그 사람이 자리를 비웠을 때 아무도 못 되돌린다.\n\n"
+        "숨겨져 있지 않은 카드를 되돌려도 성공이다.",
         [{"bearerAuth": []}], "편집기",
-        {"401": {"description": "access 토큰이 없거나 유효하지 않다."},
-         "403": {"description": "이 방송을 볼 권한이 없다."},
-         "404": {"description": "그런 카드가 없다."}},
+        {"401": CLIP_401,
+         "404": clip_err(
+             "그런 카드가 없거나, **이 방송을 볼 자격이 없다.** 🔴 **구분해 주지 않는다** — 카드 번호를 훑어 보는 것도 같은 종류의 탐색이라서다.", "jump_card_not_found"),
+         "503": CLIP_503_AUTH},
     ),
     ("/internal/broadcasts/{streamId}/highlights", "post"): (
         "점프카드 넣기 (내부 전용)",
@@ -683,14 +894,26 @@ OPS["clip"] = {
         "판별기가 재전송했을 때 로그에서 중복과 진짜 신규를 구분할 수 있게 한 것이라 "
         "**둘 다 성공**이다(재시도는 안전하다).",
         [{"internalToken": []}], "내부 (서버 간 연동)",
-        {"400": {"description": "요청이 잘못됐다 — 창이 뒤집혔거나(`startMs >= endMs`), 지점이 창 밖이거나, "
-                                "`eventId`가 128자를 넘거나, 모르는 `source`다. "
-                                "**재시도해도 같은 결과라 판별기는 멈춰야 한다.**"},
+        # 🔴 springdoc이 201을 못 만든다 — 코드가 ResponseEntity.status(런타임 값)로 가르기
+        # 때문이다(반환 타입만 봐서는 안 보인다). 여기서 손으로 넣지 않으면 스펙에 200만 남아,
+        # 「201과 200을 가른다」는 설명이 응답 목록과 어긋난다.
+        {"201": {"description": "**새 카드를 만들었다.**",
+                 "content": {"application/json": {
+                     "schema": {"$ref": "#/components/schemas/JumpCardSnapshot"}}}},
+         "400": clip_err("요청이 잘못됐다 — 창이 뒤집혔거나(`startMs >= endMs`), 지점이 창 밖이거나, "
+                         "`eventId`가 128자를 넘거나, 모르는 `source`다. "
+                         "**재시도해도 같은 결과라 판별기는 멈춰야 한다.**",
+                         "invalid_request", {"field": "windowEndMs"}),
          "401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."},
-         "404": {"description": "그런 방송이 없다."}},
+         "404": clip_err("그런 방송이 없다. **자격 판정은 여기 없다** — 이 문은 서버 간 토큰으로 "
+                         "들어오므로 감출 상대가 없다.", "broadcast_not_found")},
     ),
 }
 OK_DESC["clip"] = {
+    ("/api/clip/broadcasts", "get", "200"):
+        "조회 성공. **볼 수 있는 방송이 없으면 빈 목록이 온다**(404가 아니다).",
+    ("/api/clip/broadcasts/{streamId}/jump-cards", "get", "200"):
+        "조회 성공. 아직 카드가 없으면 빈 목록이다.",
     ("/api/clip/broadcasts/{streamId}/segments", "get", "200"): "조회 성공.",
     ("/api/clip/broadcasts/{streamId}/events", "get", "200"):
         "연결됨. **여기서 끝이 아니라 이제부터 이벤트가 흘러온다**(text/event-stream).",
@@ -700,7 +923,6 @@ OK_DESC["clip"] = {
     ("/api/clip/jump-cards/{id}/hide", "delete", "200"): "되돌림 완료. 갱신된 카드를 돌려준다.",
     ("/internal/broadcasts/{streamId}/highlights", "post", "200"):
         "**이미 있던 카드다**(같은 eventId 재전송). 성공으로 다뤄도 된다.",
-    ("/internal/broadcasts/{streamId}/highlights", "post", "201"): "새 카드를 만들었다.",
 }
 FIELDS["clip"] = {
     "SegmentWindowResponse": {
@@ -710,7 +932,11 @@ FIELDS["clip"] = {
         "availableUntilMs": "실제로 덮인 끝 지점. **조각 경계라 요청보다 늦을 수 있다.**",
         "segments": "조각 목록.",
     },
-    "Item": {
+    # 🔴 이름이 "Item"이 아니다. POK-174가 BroadcastListResponse.Item을 만들면서 단순 이름이
+    # 둘이 됐고, 축약기가 SegmentItem·BroadcastItem으로 갈랐다 — 그 순간 여기 있던 "Item"
+    # 설명이 **아무 스키마에도 안 붙게 됐다.** 오류도 경고도 없었다.
+    # 아래 report_unmatched가 이제 그런 자리를 CI 출력에 찍는다.
+    "SegmentItem": {
         "_": "조각 하나. 내부 모델의 여섯 칸 중 넷만 나간다.",
         "seq": "조각 번호. 실제 파일은 이 번호로 가리킨다(S3 키 대신).",
         "startPtsMs": "조각 시작 재생 시각(ms).",
@@ -757,10 +983,76 @@ FIELDS["clip"] = {
         "eventSeq": "이 카드의 변경 순번. SSE로 온 것과 대조할 때 쓴다.",
         "createdAt": "카드가 생긴 시각.",
     },
+    "JumpCardListResponse": {
+        "_": "카드 한 장의 모양이 **실시간 통로로 오는 것과 똑같다** — 화면이 두 벌로 처리하지 않아도 된다.",
+        "cards": "카드 목록. **방송 시간 순(빠른 것 먼저)**이다.",
+        "nextCursor": "다음 장을 받을 때 `cursor`에 **그대로** 넣는 값. "
+                      "**풀어 보거나 만들지 않는다.** `null`이면 마지막 장이다.",
+    },
+    "BroadcastListResponse": {
+        "_": "방송 목록 한 장.",
+        "broadcasts": "방송 목록. **최신 것이 먼저** 온다.",
+        "nextCursor": "다음 장을 받을 때 `cursor`에 **그대로** 넣는 값. "
+                      "**방송 목록용과 카드 목록용이 서로 안 통한다**(넣으면 400). "
+                      "`null`이면 마지막 장이다.",
+    },
+    "BroadcastItem": {
+        "_": "방송 한 줄.",
+        "streamId": "방송을 가리키는 이름. **카드 목록·통로·조각 조회에 이 값을 넣는다.**",
+        "status": "`live`(방송 중) · `ended`(끝남) · `vod_ready`(다시보기 준비됨). **소문자다.**",
+        "relation": "내가 이 방송의 스트리머와 무슨 사이인지 — "
+                    "`OWNER`(내 방송) · `EDITOR`(위임받아 편집한다). "
+                    "**둘의 권한은 같다** — 화면에 「내 방송」 표시를 다는 데 쓴다.",
+        "startedAt": "방송 시작 시각. 🔴 **`null`일 수 있다** — 종료 신호가 시작보다 먼저 도착한 "
+                     "방송이다. 지어내지 않는다. 화면은 「시작 시각 미상」으로 그린다.",
+        "endedAt": "방송 종료 시각. 방송 중이면 `null`이다.",
+        "vodExpiresAt": "다시보기 보관 만료 시각. **이 시각이 지나도 방송 줄은 목록에 남는다** — "
+                        "기록은 남고 영상만 사라진다. 화면은 이 값으로 「보관 만료」를 그리고, "
+                        "조각 조회는 그때 410을 준다.",
+    },
 }
+PARAMS["clip"] = {
+    ("/api/clip/broadcasts", "get"): {
+        "state": "🔴 **필수.** `live`(방송 중) 또는 `past`(지난 방송). **소문자로만 받는다** — "
+                 "`LIVE`는 400이다. 두 덩어리를 한 목록에 섞지 않는다.",
+        "limit": "한 장에 받을 개수. 안 주면 **20**, 최대 **100**(넘겨 달라고 해도 깎는다). "
+                 "**0 이하는 400**이다.",
+        "cursor": "다음 장 표시. 직전 응답의 `nextCursor`를 **그대로** 넣는다. "
+                  "첫 장은 안 넣거나 빈 문자열이다. **카드 목록에서 받은 표시는 여기서 400**이다.",
+    },
+    ("/api/clip/broadcasts/{streamId}/jump-cards", "get"): {
+        "streamId": "방송 목록의 `streamId`.",
+        "includeHidden": "숨긴 카드도 함께 받을지. 안 주면 `false`(뺀다).",
+        "limit": "한 장에 받을 개수. 안 주면 **50**, 최대 **200**. **0 이하는 400**이다.",
+        "cursor": "다음 장 표시. 직전 응답의 `nextCursor`를 **그대로** 넣는다. "
+                  "**방송 목록에서 받은 표시는 여기서 400**이다.",
+    },
+    ("/api/clip/broadcasts/{streamId}/events", "get"): {
+        "streamId": "방송 목록의 `streamId`.",
+        "Last-Event-ID": "브라우저 `EventSource`가 재연결할 때 자동으로 붙이는 헤더. "
+                         "🔴 **지금은 아무 일도 안 한다** — 빠진 카드는 목록 문으로 메운다.",
+        "lastEventId": "위 헤더를 못 쓸 때의 대체 칸. **마찬가지로 지금은 아무 일도 안 한다.**",
+    },
+    ("/api/clip/broadcasts/{streamId}/segments", "get"): {
+        "streamId": "방송 목록의 `streamId`.",
+        "startMs": "구간 시작(방송 시작을 0으로 잡은 ms). 음수면 400이다.",
+        "endMs": "구간 끝. `startMs`보다 커야 하고, **폭이 30분을 넘으면 400**이다.",
+    },
+    ("/api/clip/jump-cards/{id}/claim", "post"): {"id": "집을 카드의 번호(`JumpCardSnapshot.id`)."},
+    ("/api/clip/jump-cards/{id}/claim", "delete"): {"id": "놓을 카드의 번호. **내가 집은 것만** 놓을 수 있다."},
+    ("/api/clip/jump-cards/{id}/hide", "post"): {"id": "숨길 카드의 번호."},
+    ("/api/clip/jump-cards/{id}/hide", "delete"): {"id": "되돌릴 카드의 번호. **누가 숨겼든 상관없다.**"},
+    ("/internal/broadcasts/{streamId}/highlights", "post"): {
+        "streamId": "카드를 넣을 방송. clip의 방송 명부에 있어야 한다(없으면 404).",
+    },
+}
+
 TAGS["clip"] = [
-    {"name": "편집기", "description": "편집자가 쓰는 문. 사용자 JWT가 필요하고, "
-                                  "그 방송을 볼 권한이 있는지 auth에 물어 확인한다."},
+    {"name": "편집기", "description":
+        "편집자가 쓰는 문. 사용자 JWT가 필요하고, 그 방송을 볼 권한이 있는지 auth에 물어 확인한다.\n\n"
+        "🔴 **권한이 없으면 403이 아니라 404다** — 「없는 방송」과 구분해 주지 않는다. "
+        "auth에 못 닿아 확인 자체가 안 되면 **503**이고, 그때는 「권한 없음」이 아니라 "
+        "「잠시 뒤 다시」다."},
     {"name": "내부 (서버 간 연동)", "description": "판별기만 부른다. 사용자 JWT로는 통과할 수 없다."},
 ]
 NO_CONTENT["clip"] = [("/api/clip/jump-cards/{id}/claim", "delete", "놓기 완료. 본문이 없다.")]
@@ -811,6 +1103,20 @@ FIELDS["chat-collector"] = {
         "observedAt": "이 답을 만든 시각.",
     },
 }
+PARAMS["chat-collector"] = {
+    ("/internal/streams/{streamId}/chat-collection", "get"): {
+        "streamId": "물어볼 방송. **모르는 방송이어도 404가 아니라 200**(`state: unknown`)이다.",
+    },
+    ("/internal/streams/{streamId}/video-position", "get"): {
+        "streamId": "방송을 가리키는 이름.",
+        "messageTime": "채팅이 찍힌 시각. epoch ms(`1787529601000`) 또는 "
+                       "ISO-8601(`2026-08-24T12:00:00Z`).\n\n"
+                       "🔴 **`+09:00` 같은 오프셋을 쓸 때는 `+`를 `%2B`로 인코딩한다** — "
+                       "쿼리에서 `+`는 공백으로 풀려 그대로 치면 400이다.",
+        "channelId": "치지직 채널 번호. 방송 한 회를 못 찾을 때의 대체 경로다.",
+    },
+}
+
 TAGS["chat-collector"] = [
     {"name": "내부 (서버 간 연동)", "description": "clip만 부른다. 사용자 JWT로는 통과할 수 없다."},
 ]
@@ -921,6 +1227,45 @@ INTERNAL_CALLER = {
 }
 
 
+def report_unmatched(doc, server):
+    """적어 뒀는데 **어디에도 안 붙은** 설명을 찍는다.
+
+    springdoc이 스키마 이름을 클래스 이름으로 짓기 때문에, 새 DTO 하나가 들어오는 것만으로
+    기존 이름이 갈릴 수 있다(`Item` → `SegmentItem`·`BroadcastItem`). 그러면 여기 적어 둔
+    설명이 조용히 안 붙는다 — 문서는 멀쩡해 보이는데 그 칸만 비어 나간다.
+    경로가 없어지거나 이름이 바뀐 경우도 같다.
+
+    죽이지 않고 경고만 하는 이유: 문서를 배포하는 쪽이 코드보다 늦게 따라가는 것이 정상이고,
+    한 칸 때문에 전체 배포를 막으면 나머지 최신 내용까지 못 나간다.
+    """
+    paths = doc.get("paths", {})
+    schemas = doc.get("components", {}).get("schemas", {})
+    lost = []
+    for (path, method) in OPS.get(server, {}):
+        if paths.get(path, {}).get(method) is None:
+            lost.append(f"OPS {method.upper()} {path}")
+    for (path, method) in PARAMS.get(server, {}):
+        if paths.get(path, {}).get(method) is None:
+            lost.append(f"PARAMS {method.upper()} {path}")
+    for (path, method, code) in OK_DESC.get(server, {}):
+        if paths.get(path, {}).get(method, {}).get("responses", {}).get(code) is None:
+            lost.append(f"OK_DESC {method.upper()} {path} → {code}")
+    for name, fields in FIELDS.get(server, {}).items():
+        schema = schemas.get(name)
+        if schema is None:
+            lost.append(f"FIELDS 스키마 {name}")
+            continue
+        for field in fields:
+            if field != "_" and field not in schema.get("properties", {}):
+                lost.append(f"FIELDS {name}.{field}")
+    if lost:
+        print(f"  ⚠ {server}: 적어 뒀는데 안 붙은 설명 {len(lost)}개 "
+              f"— 이름이 바뀌었거나 없어진 자리다")
+        for item in lost:
+            print(f"      {item}")
+    return lost
+
+
 def enrich(doc, server):
     schemes = {}
     # 사람 토큰을 쓰는 문이 하나라도 있으면 bearerAuth를 싣는다.
@@ -961,6 +1306,15 @@ def enrich(doc, server):
         if responses and "200" in responses and "204" not in responses:
             responses["204"] = {"description": text}
             del responses["200"]
+    for (path, method), specs in PARAMS.get(server, {}).items():
+        op = doc.get("paths", {}).get(path, {}).get(method)
+        if op is None:
+            continue
+        for param in op.get("parameters", []):
+            text = specs.get(param.get("name"))
+            if text:
+                param["description"] = text
+
     for name, spec in FIELDS.get(server, {}).items():
         schema = doc.get("components", {}).get("schemas", {}).get(name)
         if schema is None:
@@ -989,6 +1343,7 @@ def main():
     doc.pop("servers", None)
 
     enrich(doc, server)
+    report_unmatched(doc, server)
 
     with open(path, "w") as f:
         json.dump(doc, f, indent=2, ensure_ascii=False)
