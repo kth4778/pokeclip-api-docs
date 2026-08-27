@@ -125,6 +125,7 @@
     editor_delegations: "편집자 위임",
     broadcasts: "방송",
     broadcast_events: "방송 이벤트 수신 기록",
+    chat_metrics: "채팅 창 집계 (판별 서버 소유)",
   };
   const COLUMN_KO = {
     "editor_invitations.id": "초대ID",
@@ -236,6 +237,16 @@
     "stream_segments.uploaded_at": "S3 업로드 완료 시각. 업로드 전이면 NULL",
     "stream_segments.bytes": "파일 크기. 업로드 전이면 NULL일 수 있다",
     "stream_segments.is_discontinuity": "이 조각 앞에 방송 재연결(끊김→복구) 경계가 있었다는 표시. 클립이 이 경계를 넘어 이어붙이면 안 된다",
+
+    "chat_metrics.id": "집계ID",
+    "chat_metrics.stream_id": "방송 한 회. chat_messages·broadcasts와 같은 폭(128)이어야 한다 — 좁으면 22001로 거절당한다",
+    "chat_metrics.window_size_ms": "이 줄이 몇 초짜리 창인가. 3·5·10초 세 종류를 한 표에 담는다",
+    "chat_metrics.window_start_ms": "창의 눈금 위치. epoch ms를 창 크기로 내림한 값이라 같은 창은 언제 세어도 같은 수가 된다 — 이것이 clip의 중복 방어가 저절로 작동하는 근거다",
+    "chat_metrics.message_count": "그 창에 들어온 채팅 수. 급증 판정의 실제 재료",
+    "chat_metrics.chatter_count": "그 창에 말한 사람 수. 지금은 판정에 안 쓰고, 나중 A/B 비교용으로 미리 쌓는다",
+    "chat_metrics.published_at": "카드를 보내려고 집은 시각. 5초 창에만 의미가 있다. NULL은 「한 번도 안 집힘」과 「집었다가 놓음」 둘 다다",
+    "chat_metrics.first_claimed_at": "이 창을 <b>처음</b> 집은 시각. 되돌렸다 다시 집어도 안 바뀐다 — 지연을 잴 때 이것을 상한으로 써야 재시도가 결과를 낙관 쪽으로 밀지 않는다",
+    "chat_metrics.created_at": "줄이 만들어진 시각. 보관 기간 청소가 이 값으로 훑는다",
   };
   // 처음 열었을 때의 배치. 여기 없는 새 테이블은 아래쪽에 자동으로 줄 세운다.
   const DEFAULT_POS = {
@@ -263,8 +274,14 @@
     broadcasts: [2760, 40],
     broadcast_events: [2760, 420],
     stream_segments: [2760, 740],
+    // 관계가 없는 표라 ③에 따라 왼쪽 아래로 뺀다. 채팅 계열끼리 모아 둔다.
+    chat_metrics: [380, 1800],
   };
   const MEMOS = [
+    { at: [40, 1800], head: "chat_metrics도 FK가 없다 — 판별 서버 혼자 쓴다",
+      body: "chat_messages를 읽어 만들지만 참조 관계는 없다(다른 서버 소유라서 — ADR-022). 이 표는 chat-detector만 쓰는 유일한 표다. 같은 창이 두 줄로 생기지 않는 것은 UNIQUE(stream_id, window_size_ms, window_start_ms)가 DB에서 막는다 — 한 바퀴가 밀려 겹쳐 돌아도 여기서 접힌다." },
+    { at: [800, 1800], head: "실패는 안 되돌리는데, 딱 한 경우만 예외다",
+      body: "집은 창(published_at)은 원칙적으로 되돌리지 않는다 — 늦게 도착한 카드가 편집자 화면을 과거로 오염시키기 때문이다. 예외는 「조각이 아직 장부에 안 왔다」일 때뿐이다: 몇 초 뒤면 답이 바뀌는데 잡은 채로 두면 그 창은 영영 다시 안 집히고, 채팅에는 백필이 없어 되찾을 방법이 없다." },
     { at: [2400, 380], head: "스트림키 비밀의 자리",
       body: "streamid 원문·passphrase는 stream_keys에 없다 — secrets(AES-256-GCM)에만 있고 표에는 해시·참조뿐이다. 웹으로는 못 보고 페어링 코드 교환으로만 나간다." },
     { at: [2400, 700], head: "치지직 토큰도 secrets를 쓴다",

@@ -52,7 +52,15 @@ INFO = {
         "치지직 채팅을 수집하는 서버(포트 8083).\n\n"
         "**수집 자체는 나가는 연결이라 API가 없다.** 여기 있는 둘은 clip이 물어보는 "
         "내부 창구뿐이다 — 둘 다 `internalToken`이 필요하고 사용자 JWT로는 못 들어온다."),
-    "chat-detector": ("PokeClip Chat Detector API", "하이라이트를 판별하는 서버(포트 8084). 아직 API가 없다."),
+    "chat-detector": (
+        "PokeClip Chat Detector API",
+        "채팅이 갑자기 몰리는 순간을 찾아내는 서버(포트 8084).\n\n"
+        "**API가 하나도 없다. 하지만 코드가 없는 것은 아니다** — 이 서버는 부르는 쪽이지 "
+        "불리는 쪽이 아니다. 스케줄러가 한 바퀴마다 활성 방송을 골라 `chat_messages`를 "
+        "3·5·10초 창으로 집계해 `chat_metrics`에 쌓고, 평소보다 튄 창을 찾으면 "
+        "clip의 `POST /internal/broadcasts/{streamId}/highlights`로 보낸다.\n\n"
+        "발행은 판정 스레드가 아니라 별도 실행기에서 한다 — clip이 죽어 있을 때 "
+        "재시도가 판정을 멈추면 안 되기 때문이다. 쌓이는 표는 ERD의 `chat_metrics`를 본다."),
 }
 
 AUTH_ERR = {
@@ -851,7 +859,8 @@ def shorten_schema_names(doc):
       - 겹치면 → 패키지의 기능 조각을 앞에 붙인다 (`ChzzkLinkRequest`·`YoutubeLinkRequest`)
     """
     schemas = doc.get("components", {}).get("schemas", {})
-    # 스키마가 하나도 없는 서버가 있다(chat-detector는 아직 코드가 없다).
+    # 스키마가 하나도 없는 서버가 있다 — chat-detector는 코드는 있지만
+    # 부르는 쪽이라 노출하는 API도 DTO도 없다.
     # 여기서 안 막으면 아래 doc["components"]["schemas"]가 KeyError로 터지고
     # **배포 전체가 죽는다** — 2026-08-25에 실제로 그랬다.
     if not schemas:
