@@ -86,6 +86,10 @@ for entry in "${SERVERS[@]}"; do
   extract_one "$name" "$port" "$auth"
 done
 
+# clip 의 되감기 채팅 문 셋은 수집 서버 답을 문자열 그대로 넘겨서 스펙에 모양이 없다.
+# 둘 다 뽑힌 지금, 수집 서버 스펙(정본)에서 모양을 복사해 붙인다.
+python3 scripts/link_proxy.py "$OUT"
+
 # ── media: REST API는 없다(Go 훅 기록기 + 사이드카). stream_segments 표만
 # 있어서 ERD용으로 그 스키마만 만든다 — media/internal/index/ddl.go의
 # 실제 EnsureSchema를 그대로 불러 쓴다(scripts/media-ensure-schema.go 참고).

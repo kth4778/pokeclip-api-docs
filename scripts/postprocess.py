@@ -672,6 +672,16 @@ FIELDS["auth"] = {
 #   PARAMS[서버][(경로, 메서드)] = {파라미터 이름: 설명}
 PARAMS = {}
 
+# springdoc 이 코드에서 **못 읽는 것**을 손으로 바로잡는 자리. 설명(OPS)과 달리 이것은 모양이다.
+#   body    — 본문을 @RequestBody 가 아니라 요청 스트림·JsonNode 로 읽는 문(스펙에 본문이 비거나 뜻 없는 객체로 나온다)
+#   status  — ResponseEntity.status(런타임 값) 으로 201·204 를 내는 문(스펙에는 200 만 남는다)
+#   params  — @RequestParam MultiValueMap 을 받는 중계 문(스펙에 'query' 뭉치 하나로 나온다)
+#   ok      — 200 본문 모양. 중계 문처럼 문자열을 그대로 넘기는 자리
+OP_FIX = {}
+
+# 스키마 이름을 사람이 읽기 좋게 바꾼다. 줄이기 규칙이 겹침만 가르므로 유일한데 뜻이 안 보이는 이름이 남는다.
+SCHEMA_ALIAS = {}
+
 PARAMS["auth"] = {
     ("/api/profile-photos/{userId}", "get"): {
         "userId": "사진 주인의 회원 번호. **직접 넣지 말고** `profileImageUrl`을 통째로 쓴다.",
@@ -936,7 +946,7 @@ FIELDS["clip"] = {
     # 둘이 됐고, 축약기가 SegmentItem·BroadcastItem으로 갈랐다 — 그 순간 여기 있던 "Item"
     # 설명이 **아무 스키마에도 안 붙게 됐다.** 오류도 경고도 없었다.
     # 아래 report_unmatched가 이제 그런 자리를 CI 출력에 찍는다.
-    "SegmentItem": {
+    "SegmentWindowItem": {
         "_": "조각 하나. 내부 모델의 여섯 칸 중 넷만 나간다.",
         "seq": "조각 번호. 실제 파일은 이 번호로 가리킨다(S3 키 대신).",
         "startPtsMs": "조각 시작 재생 시각(ms).",
@@ -953,14 +963,14 @@ FIELDS["clip"] = {
         "score": "판별기가 매긴 점수. 없어도 된다.",
         "evidence": "판별 근거. 구조가 자유로운 JSON이라 그대로 담는다.",
     },
-    # 같은 이름의 중첩 record가 둘이라 FQN 축약이 서로 다른 이름을 준다.
-    # HighlightRequest.Window → JumpcardWindow · JumpCardSnapshot.Window → Window
-    "JumpcardWindow": {
+    # 같은 이름의 중첩 record가 둘이라 바깥 클래스 이름으로 가른다(shorten_schema_names).
+    # HighlightRequest.Window → HighlightRequestWindow · JumpCardSnapshot.Window → JumpCardWindow
+    "HighlightRequestWindow": {
         "_": "잘라낼 구간(요청).",
         "startMs": "구간 시작(방송 시작 기준 ms).",
         "endMs": "구간 끝. **startMs보다 커야 한다.**",
     },
-    "Window": {
+    "JumpCardWindow": {
         "_": "잘라낼 구간(응답).",
         "startMs": "구간 시작(방송 시작 기준 ms).",
         "endMs": "구간 끝.",
@@ -996,7 +1006,7 @@ FIELDS["clip"] = {
                       "**방송 목록용과 카드 목록용이 서로 안 통한다**(넣으면 400). "
                       "`null`이면 마지막 장이다.",
     },
-    "BroadcastItem": {
+    "BroadcastListItem": {
         "_": "방송 한 줄.",
         "streamId": "방송을 가리키는 이름. **카드 목록·통로·조각 조회에 이 값을 넣는다.**",
         "status": "`live`(방송 중) · `ended`(끝남) · `vod_ready`(다시보기 준비됨). **소문자다.**",
@@ -1100,6 +1110,9 @@ FIELDS["chat-collector"] = {
                  "포기 기록이 남기 전에는 그 시각을 아무도 안 들고 있어서 지어내지 않는다.",
         "attempt": "재시도 횟수. `reconnecting`일 때만 뜻이 있다.",
         "needsRelink": "true면 **사용자가 치지직을 다시 연동해야** 복구된다. `stopped`일 때만 뜻이 있다.",
+        "donationState": "후원 구독 상태 — `none`·`subscribed`·`refused`·`failed`. **채팅 수집과 따로 논다**: "
+                         "`state=collecting` 인데 여기가 `refused` 인 것이 정상이다(토큰에 후원 권한만 없는 경우). "
+                         "모르는 방송은 `null` 이 아니라 `none` 이다.",
         "observedAt": "이 답을 만든 시각.",
     },
 }
@@ -1120,6 +1133,738 @@ PARAMS["chat-collector"] = {
 TAGS["chat-collector"] = [
     {"name": "내부 (서버 간 연동)", "description": "clip만 부른다. 사용자 JWT로는 통과할 수 없다."},
 ]
+
+
+# ═══════════════════════════ 2026-09 추가분 — auth ═══════════════════════════
+# POK-171 탈퇴 · POK-240 오디오 트랙 이름. 08-27 이후 구조만 자동으로 따라오고 설명이 비어 있던 자리다.
+
+OPS["auth"].update({
+    ("/api/auth/me", "delete"): (
+        "회원 탈퇴",
+        "**내 계정을 없앤다.** 회원 번호를 넘기지 않는다 — 토큰의 주인이 탈퇴한다.\n\n"
+        "**한 번에 거둬 가는 것**: 로그인 세션(refresh 토큰) 전부 · 스트림키와 페어링 코드(OBS 송출이 즉시 막힌다) · "
+        "치지직·유튜브 연동 · 편집자 초대와 위임(내가 준 것·받은 것 둘 다) · 오디오 트랙 이름 · 프로필 사진.\n\n"
+        "**행은 지우지 않고 익명화한다** — 이메일과 구글 계정 연결이 지워지고, 이름은 「탈퇴한 사용자」가 된다. "
+        "그래서 다른 화면에서 이 회원 번호를 조회하면 그 이름이 보인다. 내가 만든 편집본·영상 기록은 "
+        "clip 서버에 그대로 남는다(auth가 다른 서버의 표를 건드리지 않는다 — ADR-022).\n\n"
+        "🔴 **응답을 받은 직후부터 그 토큰은 전부 401이다.** 같은 access 토큰으로 다시 부르면 204가 아니라 401이 온다 — "
+        "화면은 204를 받으면 저장해 둔 토큰을 지우고 로그인 화면으로 보내면 된다.\n\n"
+        "**같은 구글 계정으로 다시 로그인하면 새 계정**이 생긴다. 탈퇴한 계정은 되살릴 수 없다.",
+        [{"bearerAuth": []}], "내 정보", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/auth/me/audio-tracks", "get"): (
+        "내 오디오 트랙 이름 보기",
+        "편집 화면 오디오 탭에 「트랙 3」 대신 **「디스코드」**처럼 보이게 하는 이름표다. OBS에서 나눠 보낸 "
+        "소리 트랙마다 스트리머가 이름을 붙인다.\n\n"
+        "**칸은 늘 여섯이다**(트랙 1~6). 이름을 안 붙인 칸은 `null`이고, 한 번도 저장 안 했으면 여섯 다 `null`이다.",
+        [{"bearerAuth": []}], "오디오 트랙 이름", {"401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/auth/me/audio-tracks", "put"): (
+        "내 오디오 트랙 이름 저장",
+        "**여섯 칸을 통째로 덮는다**(PUT). 받은 것을 고쳐 그대로 돌려보내면 된다 — 요청과 응답이 같은 모양이다.\n\n"
+        "- 칸 수가 **정확히 여섯**이어야 한다(아니면 `LABELS_SIZE`)\n"
+        "- 이름을 지우려면 그 칸에 `null` 또는 빈 문자열을 넣는다\n"
+        "- 앞뒤 공백은 서버가 자르고(전각 공백까지), **32자**까지다(이모지 1개 = 1자)\n"
+        "- 줄바꿈·탭 같은 제어문자는 거절된다\n\n"
+        "**응답은 저장된 결과**다 — 공백이 잘린 뒤의 값이 오므로 그것으로 화면을 덮어쓴다.",
+        [{"bearerAuth": []}], "오디오 트랙 이름",
+        {"400": key_err("칸 규칙에 안 맞는다. `reason` 으로 갈라 안내한다 — `LABELS_SIZE`(칸이 여섯이 아니다) · "
+                        "`LABEL_TOO_LONG`(32자 초과) · `LABEL_INVALID`(제어문자).", "LABEL_TOO_LONG"),
+         "401": UNAUTHORIZED_JWT},
+    ),
+    ("/api/streamers/{streamerUserId}/audio-tracks", "get"): (
+        "스트리머의 오디오 트랙 이름 보기",
+        "**편집자가 부르는 문이다.** 편집 화면은 내 방송이 아니라 스트리머의 방송을 여므로, 그 스트리머가 "
+        "붙인 이름을 여기서 받는다. 스트리머 본인이 불러도 된다.\n\n"
+        "**볼 수 있는 사람**: 그 스트리머 본인, 또는 그 스트리머에게 위임받은 편집자.\n\n"
+        "모양은 `GET /api/auth/me/audio-tracks` 와 같다(여섯 칸, 빈 칸은 `null`).",
+        [{"bearerAuth": []}], "오디오 트랙 이름",
+        {"401": UNAUTHORIZED_JWT,
+         "404": key_err("🔴 **없는 회원이든 볼 자격이 없든 똑같이 404다** — 갈라 주면 「그 번호가 회원인가」가 "
+                        "새어 나간다. 화면은 「이름표 없음」으로 두고 트랙 번호를 그대로 보여 주면 된다.",
+                        "STREAMER_NOT_FOUND")},
+    ),
+})
+
+OK_DESC["auth"].update({
+    ("/api/auth/me", "delete", "204"): "탈퇴 완료. 본문이 없다. **이 순간부터 그 토큰은 전부 401이다.**",
+    ("/api/auth/me/audio-tracks", "get", "200"): "조회 성공. 칸은 늘 여섯이다.",
+    ("/api/auth/me/audio-tracks", "put", "200"): "저장 성공. **공백을 자른 뒤의 값**을 돌려준다.",
+    ("/api/streamers/{streamerUserId}/audio-tracks", "get", "200"): "조회 성공. 칸은 늘 여섯이다.",
+})
+
+PARAMS["auth"].update({
+    ("/api/streamers/{streamerUserId}/audio-tracks", "get"): {
+        "streamerUserId": "스트리머의 **회원 번호**. 방송 목록의 스트리머 번호, 위임 목록의 `streamerId` 와 같은 값이다.",
+    },
+})
+
+FIELDS["auth"].update({
+    "Labels": {
+        "_": "오디오 트랙 이름표. **요청과 응답이 같은 모양**이다.",
+        "labels": "트랙 1~6 의 이름. **길이는 늘 6**이고 `labels[0]` 이 트랙 1이다. 이름 없는 칸은 `null`. "
+                  "트랙 번호는 편집본(`audio.tracks[].trackId`)의 1~5 와 같은 번호다.",
+    },
+})
+
+TAGS["auth"].insert(2, {"name": "오디오 트랙 이름",
+                        "description": "OBS가 나눠 보낸 소리 트랙(게임·마이크·디스코드…)에 스트리머가 붙이는 이름. "
+                                       "편집 화면의 오디오 탭이 쓴다."})
+
+
+# ═══════════════════════════ 2026-09 추가분 — clip ═══════════════════════════
+# 편집본(POK-124) · 영상 만들기(POK-125) · 보관함(POK-243) · 완성 영상 주소(POK-247) · 유튜브 업로드(POK-220)
+# · 재생 출입증(POK-122) · 되감기 채팅(POK-234) · 방송 중 목록(POK-218).
+
+CLIP_400 = lambda desc, field: clip_err(desc, "invalid_request", {"field": field})
+RECIPE_404 = clip_err("그런 방송이 없거나 볼 자격이 없거나, **그 방송에 그 번호의 편집본이 없다.** "
+                      "🔴 셋을 구분해 주지 않는다(다른 방송의 편집본 번호를 넣어도 같은 404다).", "recipe_not_found")
+CLIP_NOT_FOUND = clip_err("그런 방송이 없거나 볼 자격이 없거나, **그 방송에 그 번호의 영상이 없다.** "
+                          "🔴 구분해 주지 않는다.", "clip_not_found")
+RENDER_503 = clip_err("영상 만들기 줄(큐)이 꺼져 있다. **사용자 잘못이 아니다** — 「잠시 뒤 다시」.",
+                      "render_unavailable")
+
+RECIPE_BODY_DESC = (
+    "**계약6 레시피 JSON 그대로**(편집기가 가진 상태를 통째로 보낸다). 규칙:\n\n"
+    "- `schemaVersion` 은 **1**\n"
+    "- `streamId` 는 **주소의 방송과 같아야** 한다\n"
+    "- `cut` — 방송 절대시각(UTC epoch ms)의 `[inAtMs, outAtMs)`. 길이 **5초~180초**. "
+    "**`cut` 을 `null` 로 보내면 템플릿**(구간 없는 편집 틀)으로 저장된다 — 템플릿은 영상 주문을 못 한다\n"
+    "- `outputs` — 1개 이상. `outputId` 는 `[a-z0-9-]{1,32}` · 벌마다 유일 · `aspect` 는 `VERT_9_16`·`SQUARE_1_1` 중 하나이고 "
+    "**같은 비율을 두 번 못 넣는다** · `crop` 은 정규화 좌표(좌상단 원점) `x,y ∈ [0,1)` · `w,h ≥ 0.05` · `x+w ≤ 1` · `y+h ≤ 1`\n"
+    "- `audio.tracks` — 1개 이상. `trackId` 0 = 최종 믹스, 1~5 = 소스별 트랙. **0 과 1~5 를 같이 못 넣는다**(이중 산입) · "
+    "`gain` 0.0~2.0 (1.0 = 원음)\n"
+    "- `subtitles` — `null` 이면 자막 없음. `mode` 는 `BURN_AND_CC`(영상에 새김+srt)·`BURN_ONLY`·`CC_ONLY` · "
+    "`segments` 는 방송 절대축 `[startAtMs, endAtMs)` 오름차순·겹침 금지(빈 배열 허용). 컷 밖 구간은 거절하지 않는다 — "
+    "컷을 옮기면 다시 보인다\n\n"
+    "본문은 **256KB** 까지. `Content-Type: application/json` 이 아니면 415.")
+
+OPS["clip"].update({
+    # ── 편집본 ──
+    ("/api/clip/broadcasts/{streamId}/recipes", "post"): (
+        "편집본 저장 (새로)",
+        "**편집 화면의 「저장」.** 구간·화면 비율과 잘라내기·오디오·자막을 한 벌로 저장한다. 이것을 「레시피」라 부른다 — "
+        "영상 파일이 아니라 **영상을 어떻게 만들지 적은 설계도**다. 영상은 이것으로 `…/renders` 를 불러야 만들어진다.\n\n"
+        "**지우는 문은 없다**(영구 보존). 고치려면 `PUT …/recipes/{id}`.\n\n"
+        "응답은 **201** 과 저장된 편집본이다. `recipeVersion` 은 1 로 시작한다.",
+        [{"bearerAuth": []}], "편집본",
+        {"400": CLIP_400("본문이 규칙에 안 맞는다. **`field` 가 어느 덩어리인지 알려준다** — `body`(JSON이 아니거나 비었거나 "
+                         "256KB 초과) · `schemaVersion` · `streamId` · `cut` · `outputs` · `audio` · `subtitles`. "
+                         "첫 번째로 어긋난 덩어리 하나만 온다.", "cut"),
+         "401": CLIP_401, "404": CLIP_404, "503": CLIP_503_AUTH},
+    ),
+    ("/api/clip/broadcasts/{streamId}/recipes", "get"): (
+        "편집본 목록 (한 방송)",
+        "그 방송에 저장된 편집본 전부. **만든 순서(오래된 것 먼저)** 다. 페이지를 나누지 않는다.\n\n"
+        "**누가 만든 것이든 다 온다** — 스트리머와 편집자가 같은 방송의 편집본을 같이 본다(`creatorId` 로 갈린다).\n\n"
+        "여러 방송에 걸친 「내 편집본 전부」는 보관함(`GET /api/clip/library`)이다.",
+        [{"bearerAuth": []}], "편집본", {"401": CLIP_401, "404": CLIP_404, "503": CLIP_503_AUTH},
+    ),
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "get"): (
+        "편집본 하나 보기",
+        "편집 화면을 다시 열 때 부른다. `recipe` 가 **저장할 때 보낸 JSON 그대로** 돌아온다.",
+        [{"bearerAuth": []}], "편집본", {"401": CLIP_401, "404": RECIPE_404, "503": CLIP_503_AUTH},
+    ),
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "put"): (
+        "편집본 고치기",
+        "**통째로 갈아 끼운다**(부분 수정이 아니다). 성공하면 `recipeVersion` 이 **+1** 된다.\n\n"
+        "🔴 **덮어쓰기 경고를 안 한다.** 두 사람이 같은 편집본을 동시에 고치면 줄을 서서 **둘 다 저장되고 나중 것이 남는다**"
+        "(판이 두 번 오른다). 화면이 「누가 먼저 고쳤다」를 알아야 하면 응답의 `recipeVersion` 이 예상보다 크게 뛰었는지를 본다.\n\n"
+        "이미 만든 영상은 **그 영상을 만든 판**을 기억한다 — 고쳐도 옛 영상이 바뀌지 않는다. 보관함에서는 "
+        "「지금 판으로 만든 영상이 없다」가 되어 상태가 `editing` 으로 돌아간다.",
+        [{"bearerAuth": []}], "편집본",
+        {"400": CLIP_400("본문이 규칙에 안 맞는다. `field` 는 저장 문과 같다.", "outputs"),
+         "401": CLIP_401, "404": RECIPE_404, "503": CLIP_503_AUTH},
+    ),
+
+    # ── 영상 만들기 ──
+    ("/api/clip/broadcasts/{streamId}/recipes/{recipeId}/renders", "post"): (
+        "영상 만들기 주문",
+        "**편집본의 지금 판으로 영상을 만들어 달라고 주문한다.** 본문이 없다 — 무엇을 만들지는 편집본 번호가 말한다.\n\n"
+        "- **201** 새 주문 · **200** 같은 편집본 같은 판의 주문이 이미 진행 중이다(그것을 돌려준다). "
+        "**버튼을 두 번 눌러도 주문은 하나다**\n"
+        "- 주문은 바로 끝나지 않는다. 응답의 `status` 는 `queued` 이고, 이후 `GET …/clips/{clipId}` 로 "
+        "`rendering` → `rendered`(완성) 또는 `failed` 를 확인한다(진행률은 `progress.percent`)\n"
+        "- 완성되면 `POST …/clips/{clipId}/file-access` 로 파일 주소를 받는다",
+        [{"bearerAuth": []}], "영상 만들기·보관함",
+        {"400": CLIP_400("**구간 없는 템플릿**이라 만들 수 없다(`field: cut`). 편집본에 구간을 넣고 저장한 뒤 다시 누른다.", "cut"),
+         "401": CLIP_401, "404": RECIPE_404,
+         "409": clip_err("그 구간의 방송 영상 조각이 **아직 다 안 올라왔다.** 방송 중이거나 막 끝났을 때 난다. "
+                         "**잘라서 만들지 않는다** — 짧아진 영상이 조용히 나가는 것이 안 나가는 것보다 나쁘다. "
+                         "몇 초 뒤 다시 누르면 된다.", "source_not_ready"),
+         "422": clip_err("주문서가 너무 크다(200KB 초과) — 자막이 비정상적으로 많은 편집본이다.", "message_too_large"),
+         "503": {"description": "`render_unavailable`(주문줄이 꺼짐) 또는 `authorization_unavailable`(자격 확인 불가). "
+                                 "둘 다 「잠시 뒤 다시」다.",
+                 "content": {"application/json": {"example": {"error": "render_unavailable"}}}}},
+    ),
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}", "get"): (
+        "만든 영상 상태 보기",
+        "주문한 영상 하나의 지금 상태. **진행률을 보려고 몇 초마다 불러도 된다.**\n\n"
+        "`status`: `queued`(줄 서는 중) → `rendering`(만드는 중, `progress.percent` 가 오른다) → `rendered`(완성) | `failed`(실패, "
+        "`error` 에 사유).\n\n"
+        "`upload` 에 가장 최근 유튜브 업로드가 붙어 온다(안 올렸으면 `null`).",
+        [{"bearerAuth": []}], "영상 만들기·보관함", {"401": CLIP_401, "404": CLIP_NOT_FOUND, "503": CLIP_503_AUTH},
+    ),
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/file-access", "post"): (
+        "완성 영상 파일 주소 받기",
+        "**완성된 영상을 틀거나 내려받을 주소**를 준다. 창고(S3)가 비공개라 영상 기록의 `outputs[].s3Key` 로는 못 받는다 — "
+        "이 문이 **60분짜리 미리서명 주소**를 만들어 준다.\n\n"
+        "- 주소 하나가 곧 출입증이다: `expiresAt` 까지는 **로그인 없이 누구든** 그 주소로 받는다. 주소를 남에게 공유하지 않는다\n"
+        "- 같은 주소를 `<video src>` 에 넣으면 재생, `<a href>` 로 열면 `fileName` 으로 내려받아진다\n"
+        "- **POST 인 이유**: 부를 때마다 새 주소를 만든다. GET 이면 중간 캐시·브라우저 기록에 주소가 남는다. "
+        "만료되면 다시 부르면 된다",
+        [{"bearerAuth": []}], "영상 만들기·보관함",
+        {"401": CLIP_401, "404": CLIP_NOT_FOUND,
+         "409": clip_err("아직 완성되지 않았다(`queued`·`rendering`·`failed`).", "clip_not_rendered"),
+         "503": {"description": "`render_unavailable`(창고 설정 없음) 또는 `authorization_unavailable`.",
+                 "content": {"application/json": {"example": {"error": "render_unavailable"}}}}},
+    ),
+
+    # ── 보관함 ──
+    ("/api/clip/library", "get"): (
+        "보관함 목록",
+        "**내가 볼 수 있는 모든 방송의 편집본을 한데 모은 목록**이다(방송을 고르지 않는다). 편집본 하나당 한 줄이고, "
+        "그 원본 방송 요약과 **가장 최근 만든 영상**이 함께 붙어 온다.\n\n"
+        "**새 편집본이 먼저** 온다. 다음 장은 `nextCursor` 를 그대로 되돌려 넣는다.\n\n"
+        "편집본 본문(계약6 JSON)은 안 싣는다 — 무거워서다. 필요하면 `GET /api/clip/library/{recipeId}`.",
+        [{"bearerAuth": []}], "영상 만들기·보관함",
+        {"400": CLIP_400("요청 값이 잘못됐다 — `status`(모르는 값) · `limit`(0 이하) · `cursor`(우리가 준 표시가 아니다).",
+                         "status"),
+         "401": CLIP_401, "503": CLIP_503_AUTH},
+    ),
+    ("/api/clip/library/{recipeId}", "get"): (
+        "보관함 상세",
+        "목록 한 줄의 칸 전부 + **편집본 본문(`recipe`)**. 목록 줄과 같은 모양이라 화면이 같은 코드로 읽는다.\n\n"
+        "방송 번호 없이 편집본 번호만으로 부른다(보관함은 방송을 고르지 않는다).",
+        [{"bearerAuth": []}], "영상 만들기·보관함",
+        {"401": CLIP_401,
+         "404": clip_err("그런 편집본이 없거나 **볼 자격이 없다.** 🔴 구분해 주지 않는다.", "recipe_not_found"),
+         "503": CLIP_503_AUTH},
+    ),
+
+    # ── 유튜브 업로드 ──
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/uploads", "post"): (
+        "유튜브에 올리기 주문",
+        "**완성된 영상을 스트리머의 유튜브 채널에 비공개로 올려 달라고 주문한다.**\n\n"
+        "- 올라가는 채널은 **그 방송의 스트리머 채널**이다(주문한 사람이 편집자여도). 스트리머가 유튜브 연동을 해 둬야 한다\n"
+        "- **201** 새 주문 · **200** 같은 영상 같은 벌이 이미 올라가는 중이거나 올라갔다(그것을 돌려준다) — "
+        "**두 번 눌러도 채널에 영상은 하나다**\n"
+        "- 바로 끝나지 않는다. 결과는 `GET …/clips/{clipId}` 의 `upload`, 또는 보관함의 상태로 본다\n\n"
+        "**상태**: `queued` → `uploading` → `uploaded`(끝, `videoId` 로 `https://youtu.be/{videoId}`) | "
+        "`failed`(**채널에 영상이 없는 것이 확실** — 다시 주문할 수 있다) | "
+        "🔴 `checking`(**올라갔는지 모른다** — 자동으로 다시 올리면 같은 영상이 둘 뜰 수 있어 멈춘다. "
+        "스트리머가 채널에서 직접 확인해야 한다)",
+        [{"bearerAuth": []}], "유튜브 업로드",
+        {"400": CLIP_400("본문이 규칙에 안 맞는다 — `title`(비었거나 100자 초과, `<`·`>` 포함) · "
+                         "`description`(5000바이트 초과, `<`·`>` 포함) · `outputId`(없는 벌이거나, 영상 벌이 여럿인데 안 줬다).",
+                         "title"),
+         "401": CLIP_401, "404": CLIP_NOT_FOUND,
+         "409": clip_err("영상이 아직 완성되지 않았다.", "clip_not_rendered"),
+         "503": {"description": "`upload_unavailable`(업로드 줄이 꺼짐) 또는 `authorization_unavailable`.",
+                 "content": {"application/json": {"example": {"error": "upload_unavailable"}}}}},
+    ),
+
+    # ── 재생 출입증 ──
+    ("/api/clip/broadcasts/{streamId}/playback-access", "post"): (
+        "방송 영상 재생 출입증 받기",
+        "**방송 영상(라이브·되감기·다시보기)을 플레이어가 받을 수 있게** 브라우저에 CloudFront 서명 쿠키를 붙여 준다. "
+        "영상은 이 서버를 거치지 않고 CDN에서 바로 받는다.\n\n"
+        "**응답 본문보다 `Set-Cookie` 헤더가 본체다** — 종류(`live`·`dvr`·`vod`)마다 쿠키 세 장, 모두 아홉 장이 붙는다. "
+        "`HttpOnly` 라 자바스크립트로는 안 보이고, 브라우저가 영상 요청에 알아서 붙인다.\n\n"
+        "🔴 **앱과 서버의 주소가 달라서, 이 문을 부를 때 `credentials: 'include'`(axios 는 `withCredentials: true`) 가 "
+        "있어야 쿠키가 저장된다.** 빼먹으면 200 이 와도 영상 요청이 403 이 된다.\n\n"
+        "출입증은 **60분** 짜리다(`expiresAt`). 만료 전에 같은 문을 다시 부르면 새 쿠키가 옛 것을 덮는다.",
+        [{"bearerAuth": []}], "방송 영상 재생",
+        {"401": CLIP_401, "404": CLIP_404,
+         "503": {"description": "`playback_signing_unavailable`(서명 설정이 비었다 — 로컬 기본 상태) 또는 "
+                                 "`authorization_unavailable`. **404 로 접지 않는다** — 설정이 채워지면 다시 누르면 된다.",
+                 "content": {"application/json": {"example": {"error": "playback_signing_unavailable"}}}}},
+    ),
+
+    # ── 되감기 채팅 (중계) ──
+    ("/api/clip/broadcasts/{streamId}/chat-messages", "get"): (
+        "채팅·후원 목록 (한 구간)",
+        "**되감기 화면이 영상 옆에 채팅을 띄우는 문.** `from`~`to` 구간에 들어온 채팅과 후원을 **한 목록에 섞어** 준다.\n\n"
+        "clip 은 자격만 확인하고 **수집 서버(chat-collector)의 답을 그대로** 넘긴다. 그래서 응답 모양·400 사유 낱말"
+        "(`missing`·`inverted`·`too_wide`…)이 수집 서버의 같은 창구와 글자까지 같다.\n\n"
+        "🔴 **시각이 두 축이다.** 응답의 `time` 은 채팅이 **기록된** 시각이고, 영상 화면 위치는 "
+        "**`time − appliedOffsetMs`** 로 구한다(방송이 몇 초 늦게 보이는 만큼 보정한 값이다). `from`·`to` 는 **화면 축**으로 준다.\n\n"
+        "**한 번에 1시간까지**다. 라이브로 새로 오는 채팅은 SSE 통로(`…/events`)의 `chat`·`donation` 이벤트로 받는다.",
+        [{"bearerAuth": []}], "되감기 채팅",
+        {"400": {"description": "요청 값이 잘못됐다. 본문은 `{\"error\": 사유}` — `missing`(from·to 없음) · "
+                                 "`unreadable`(시각 형식) · `out_of_range` · `inverted`(from ≥ to) · `too_wide`(1시간 초과) · "
+                                 "`limit` · `kinds` · `cursor`.",
+                 "content": {"application/json": {"example": {"error": "too_wide"}}}},
+         "401": CLIP_401, "404": CLIP_404,
+         "503": {"description": "`collector_unavailable`(수집 서버에 못 닿음) 또는 `authorization_unavailable`. "
+                                 "🔴 **「채팅 0건」으로 접지 않는다** — 빈 목록이면 화면이 「그 구간엔 채팅이 없었다」로 단정한다.",
+                 "content": {"application/json": {"example": {"error": "collector_unavailable"}}}}},
+    ),
+    ("/api/clip/broadcasts/{streamId}/chat-chart", "get"): (
+        "채팅량 차트 (한 구간)",
+        "되감기 화면 타임라인 위의 **채팅량 그래프**. 구간을 `bucket` 초 단위로 잘라 칸마다 채팅 수·후원 수를 센다. "
+        "**빈 칸도 0 으로 들어 있다**(선을 끊김 없이 그리라고).\n\n"
+        "목록 문과 같은 중계·같은 시각 규칙이다 — 칸의 `start` 는 기록 축이라 화면 위치는 `start − appliedOffsetMs`.",
+        [{"bearerAuth": []}], "되감기 채팅",
+        {"400": {"description": "`missing`·`unreadable`·`inverted`·`too_wide` · `bucket`(5·10·30·60 이 아니다) · "
+                                 "`too_many_buckets`(점이 720 개를 넘는다).",
+                 "content": {"application/json": {"example": {"error": "bucket"}}}},
+         "401": CLIP_401, "404": CLIP_404,
+         "503": {"description": "`collector_unavailable` 또는 `authorization_unavailable`.",
+                 "content": {"application/json": {"example": {"error": "collector_unavailable"}}}}},
+    ),
+    ("/api/clip/broadcasts/{streamId}/broadcast-info", "get"): (
+        "방송 정보 (제목·카테고리·시청자 수 추이)",
+        "되감기 화면 위쪽의 **방송 제목·태그·카테고리**와 **시청자 수 그래프** 재료. 수집 서버가 1분마다 관측한 값이다.\n\n"
+        "- `latest` — 가장 최근 관측. **`since` 와 무관하게** 늘 온다(구간이 비어도 제목은 보여야 해서). "
+        "한 번도 관측 못 했으면 `null`\n"
+        "- `series` — `since` 부터의 시청자 수 점들(최대 720 개). `since` 를 안 주면 최근 1시간\n\n"
+        "**모르는 방송도 200** 이다(`latest: null`, `series: []`) — 방송이 켜진 직후엔 아직 관측 전이라서다.",
+        [{"bearerAuth": []}], "되감기 채팅",
+        {"400": {"description": "`since` 시각 형식이 틀렸다(`unreadable`·`out_of_range`).",
+                 "content": {"application/json": {"example": {"error": "unreadable"}}}},
+         "401": CLIP_401, "404": CLIP_404,
+         "503": {"description": "`collector_unavailable` 또는 `authorization_unavailable`.",
+                 "content": {"application/json": {"example": {"error": "collector_unavailable"}}}}},
+    ),
+
+    # ── 내부 창구 ──
+    ("/internal/broadcasts/live", "get"): (
+        "방송 중 목록 (내부 전용)",
+        "**수집 서버가 재시작한 뒤 「지금 어느 방송에 붙어야 하나」를 묻는 문**이다. 명부에서 `live` 인 방송을 준다.\n\n"
+        "- 요청 칸이 없다 → 400 도 없다. 거절은 401 하나\n"
+        "- 자격 판정이 없다 — 부르는 쪽이 사람이 아니라 우리 서버다\n"
+        "- 최대 **500 줄**. 넘으면 `truncated: true` — 개수 제한이라기보다 「명부가 이상하다」는 신호다"
+        "(종료 알림을 놓친 방송이 `live` 로 남아 쌓이는 경우)",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."}},
+    ),
+    ("/internal/broadcasts/{streamId}/chat-events", "post"): (
+        "라이브 채팅 밀어넣기 (내부 전용)",
+        "**수집 서버가 방금 받은 채팅·후원·방송정보를 저장과 따로 바로 미는 문.** 받은 것을 그 방송의 SSE 연결에 뿌리고 "
+        "**저장하지 않는다** — 정본은 수집 서버의 표다.\n\n"
+        "- 그 방송을 보는 연결이 **없으면 DB 도 안 치고** `200 {accepted:0, dropped:0}` — 아무도 안 보는 방송의 채팅 유량이 "
+        "clip 의 DB 부하가 되지 않게 하려는 것\n"
+        "- 모르는 `kind` 는 400 이 아니라 건너뛰고 `dropped` 로 센다 — 수집 서버가 먼저 배포되는 날 채팅이 통째로 죽지 않게\n"
+        "- 연결 큐가 차서 버린 것은 `dropped` 에 안 들어간다(연결마다 달라서)",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": CLIP_400("구조가 깨졌다 — `events`(없음·배열 아님·비었음·원소가 객체 아님) · `seq`(1 이상 정수가 아님) · "
+                         "`kind`(비었음).", "events"),
+         "401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."},
+         "404": clip_err("보는 연결은 있는데 명부에 그 방송이 없다.", "broadcast_not_found")},
+    ),
+    ("/internal/jobs/{jobId}/events", "post"): (
+        "렌더 일꾼 진행 보고 (내부 전용)",
+        "**렌더 일꾼(workers/render)이 영상 만들기 진행을 보고하는 문**(계약1 4절). 같은 보고가 다시 와도 "
+        "**그때 준 답을 그대로 다시 준다**(`eventId` 로 멱등).\n\n"
+        "**`eventType` 다섯**: `STARTED`(시작 — 답으로 `executionToken` 을 받는다) · `PROGRESS` · `RETRY_SCHEDULED` · "
+        "`SUCCEEDED`(`result` 에 산출물 목록) · `TERMINAL_FAILED`.\n\n"
+        "**STARTED 의 답** `{proceed, executionToken, attemptOrdinal, isFinalAttempt}` — `proceed:false` 면 **일하지 말고 멈춘다**"
+        "(이미 끝난 잡, 시도 상한 초과, 또는 같은 STARTED 의 재배달). 이후 보고에는 받은 `executionToken` 을 싣는다.\n\n"
+        "**409 `SUPERSEDED`** — 토큰이 옛것이다. 다른 일꾼이 같은 잡을 새로 잡았으니 이 일꾼은 손을 뗀다. "
+        "**409 `TERMINAL`** — 잡이 이미 끝났다.",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": {"description": "보고가 잘못됐다. 본문 `{\"reason\": ...}` — `INVALID_EVENT`(시작 전 보고 등) · "
+                                 "`result_missing` · `unknown_output` · `key_outside_prefix` · `duplicate_video` · "
+                                 "`unknown_kind` · `video_missing`(SUCCEEDED 의 산출물 검증). **재시도해도 같은 답이다.**",
+                 "content": {"application/json": {"example": {"reason": "video_missing"}}}},
+         "401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."},
+         "404": clip_err("그런 잡이 없다.", "job_not_found"),
+         "409": {"description": "`SUPERSEDED`(옛 토큰) 또는 `TERMINAL`(이미 끝남). 일꾼은 손을 뗀다.",
+                 "content": {"application/json": {"example": {"reason": "SUPERSEDED"}}}}},
+    ),
+    ("/internal/uploads/{uploadId}/start", "post"): (
+        "업로드 일꾼 — 주문 잡기 (내부 전용)",
+        "**업로드 일꾼(workers/upload)이 줄에서 꺼낸 주문을 「잡았다」고 알린다.** 본문이 없다.\n\n"
+        "답 `{proceed, status, attempt, sessionUri}`:\n"
+        "- `proceed:false` — 이미 끝난 주문(`uploaded`·`failed`·`checking`). 같은 쪽지가 두 번 온 것이니 버린다\n"
+        "- `sessionUri` 가 있으면 — **새로 만들지 말고 그 이어 올리기 주소에 「어디까지 받았나」부터 묻는다**. "
+        "먼저 잡았던 일꾼이 주소를 받아 둔 것이다(이게 채널에 영상이 둘 뜨는 것을 막는다)",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."},
+         "404": clip_err("그런 업로드 주문이 없다.", "upload_not_found")},
+    ),
+    ("/internal/uploads/{uploadId}/session", "post"): (
+        "업로드 일꾼 — 이어 올리기 주소 기록 (내부 전용)",
+        "**유튜브에서 받은 이어 올리기 주소를 적는다.** 🔴 **먼저 적힌 주소가 있으면 그것을 돌려준다** — 일꾼은 자기 주소를 "
+        "버리고 돌려받은 주소로 올린다. 두 일꾼이 같은 주문을 동시에 잡아도 영상 바이트는 **한 주소로만** 가서 채널에 영상이 "
+        "많아야 하나다.\n\n"
+        "주소 자체가 올리기 권한이라 어떤 응답·로그에도 화면 쪽으로는 안 나간다.",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": CLIP_400("`sessionUri` 가 없거나 모양이 틀리다.", "sessionUri"),
+         "401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."},
+         "404": clip_err("그런 업로드 주문이 없다.", "upload_not_found"),
+         "409": {"description": "`NOT_STARTED`(`start` 를 먼저 부르지 않았다) 또는 `TERMINAL`(이미 끝난 주문).",
+                 "content": {"application/json": {"example": {"reason": "NOT_STARTED"}}}}},
+    ),
+    ("/internal/uploads/{uploadId}/result", "post"): (
+        "업로드 일꾼 — 끝 보고 (내부 전용)",
+        "`outcome` 셋: `UPLOADED`(`videoId` 필수) · `FAILED` · `CHECKING`(올라갔는지 모름). 같은 끝 보고가 다시 오면 200.\n\n"
+        "🔴 **주소가 적힌 뒤에는 `FAILED` 를 받아도 `checking` 으로 닫는다.** 같은 주소로 다른 일꾼이 아직 올리는 중일 수 "
+        "있어서다 — 자리를 비우면 다시 주문한 업로드와 늦게 끝난 쪽이 겹쳐 영상이 둘 뜬다. "
+        "그리고 늦게 온 `UPLOADED` 는 `checking` 을 이긴다(정보가 더 많다).",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": CLIP_400("`outcome`(셋 중 하나가 아니다) · `videoId`(UPLOADED 인데 없거나 모양이 틀리다) · `errorCode`.",
+                         "outcome"),
+         "401": {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."},
+         "404": clip_err("그런 업로드 주문이 없다.", "upload_not_found"),
+         "409": {"description": "`NOT_STARTED` 또는 `TERMINAL`(다른 결과로 이미 끝났다).",
+                 "content": {"application/json": {"example": {"reason": "TERMINAL"}}}}},
+    ),
+})
+
+# SSE 통로에 채팅이 실리게 됐다(POK-234 PR-B). 기존 설명 뒤에 한 문단을 붙인다.
+_sse = OPS["clip"][("/api/clip/broadcasts/{streamId}/events", "get")]
+OPS["clip"][("/api/clip/broadcasts/{streamId}/events", "get")] = (
+    _sse[0],
+    _sse[1] + "\n\n**카드 말고도 흐르는 이벤트가 있다**(2026-09, POK-234): `chat` · `donation` · `broadcast-info`. "
+              "이 셋은 `id` 에 수집 순번(`seq`)이 실리고 `data` 는 수집 서버가 준 JSON 그대로다 — "
+              "되감기 목록 창구(`…/chat-messages`)의 `id` 와는 **다른 번호**라 둘을 짝지으면 안 된다. "
+              "연결 직후에는 주석 한 줄(`: ok`)이 먼저 온다.",
+    _sse[2], _sse[3], _sse[4])
+
+OP_FIX["clip"] = {
+    ("/api/clip/broadcasts/{streamId}/recipes", "post"): {
+        "status": ("200", "201"),
+        "body": {"required": True, "description": RECIPE_BODY_DESC,
+                 "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecipeDocument"}}}}},
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "put"): {
+        "body": {"required": True, "description": RECIPE_BODY_DESC,
+                 "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RecipeDocument"}}}}},
+    ("/api/clip/broadcasts/{streamId}/recipes/{recipeId}/renders", "post"): {"status": ("200", "201")},
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/uploads", "post"): {"status": ("200", "201")},
+    ("/internal/jobs/{jobId}/events", "post"): {
+        "body": {"required": True, "description": "계약1 4절 봉투. 모르는 칸은 무시한다.",
+                 "content": {"application/json": {"schema": {"type": "object", "properties": {
+                     "eventId": {"type": "string", "format": "uuid", "description": "보고 한 통의 고유 번호. 같은 값이 다시 오면 저장된 답을 그대로 준다."},
+                     "eventType": {"type": "string", "enum": ["STARTED", "PROGRESS", "RETRY_SCHEDULED", "SUCCEEDED", "TERMINAL_FAILED"]},
+                     "occurredAt": {"type": "string", "description": "일꾼이 겪은 시각(ISO-8601)."},
+                     "executionToken": {"type": "string", "format": "uuid", "description": "STARTED 답으로 받은 값. STARTED 와 준비 단계 실패에는 없다."},
+                     "progressPercent": {"type": "integer", "description": "0~100. 같은 토큰 안에서 줄지 않는다."},
+                     "progressStage": {"type": "string"},
+                     "result": {"type": "array", "description": "SUCCEEDED 의 산출물. 칸마다 `outputId`·`kind`(`video`|`srt`)·`s3Key` — 벌마다 video 가 정확히 하나."},
+                     "errorCode": {"type": "string"}, "errorMessage": {"type": "string"}},
+                     "required": ["eventId", "eventType"]}}}},
+        "ok": {"type": "object", "description": "STARTED 면 `{proceed, executionToken, attemptOrdinal, isFinalAttempt}`, 나머지는 빈 객체 `{}`."}},
+    ("/internal/broadcasts/{streamId}/chat-events", "post"): {
+        "body": {"required": True, "description": "수집 서버의 `ClipRelayClient` 가 정본이다.",
+                 "content": {"application/json": {"schema": {"type": "object", "required": ["events"], "properties": {
+                     "events": {"type": "array", "description": "한 묶음. 비면 400.", "items": {"type": "object", "required": ["seq", "kind"], "properties": {
+                         "seq": {"type": "integer", "description": "수집 순번(1 이상). SSE 이벤트 `id` 로 그대로 나간다."},
+                         "kind": {"type": "string", "description": "`chat`·`donation`·`broadcast-info`. 모르는 값은 건너뛴다."}},
+                         "additionalProperties": True}}}}}}},
+        "ok": {"type": "object", "properties": {"accepted": {"type": "integer", "description": "연결에 뿌리려고 넣은 수."},
+                                                "dropped": {"type": "integer", "description": "모르는 kind 라 건너뛴 수."}}}},
+    ("/internal/uploads/{uploadId}/start", "post"): {
+        "ok": {"type": "object", "properties": {"proceed": {"type": "boolean"}, "status": {"type": "string"},
+                                                "attempt": {"type": "integer", "description": "이 주문을 잡은 횟수(진단용)."},
+                                                "sessionUri": {"type": "string", "description": "이미 적힌 이어 올리기 주소. 없으면 null."}}}},
+    ("/internal/uploads/{uploadId}/session", "post"): {
+        "ok": {"type": "object", "properties": {"sessionUri": {"type": "string", "description": "**이 주소로 올린다.** 먼저 적힌 것이 있으면 그것이다."}}}},
+    ("/internal/uploads/{uploadId}/result", "post"): {
+        "ok": {"type": "object", "description": "받은 뒤의 업로드 상태."}},
+    ("/api/clip/broadcasts/{streamId}/playback-access", "post"): {
+        "ok": {"type": "object", "properties": {
+            "streamId": {"type": "string"},
+            "expiresAt": {"type": "string", "description": "쿠키 만료 시각(ISO-8601). 이 전에 다시 부르면 갱신된다."},
+            "resources": {"type": "array", "items": {"type": "string"},
+                          "description": "쿠키가 여는 CDN 경로 셋(`…/live/{streamId}/*` · `…/dvr/…` · `…/vod/…`). 진단용이고 화면이 쓸 일은 없다."}}}},
+    # 중계 문 셋 — MultiValueMap 이 'query' 뭉치 하나로 나온다. 실제로 넘기는 칸만 적는다(BroadcastChatController 의 허용 목록).
+    ("/api/clip/broadcasts/{streamId}/chat-messages", "get"): {"params": [
+        {"name": "from", "in": "query", "required": True, "schema": {"type": "string"}},
+        {"name": "to", "in": "query", "required": True, "schema": {"type": "string"}},
+        {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+        {"name": "cursor", "in": "query", "schema": {"type": "string"}},
+        {"name": "kinds", "in": "query", "schema": {"type": "string"}}]},
+    ("/api/clip/broadcasts/{streamId}/chat-chart", "get"): {"params": [
+        {"name": "from", "in": "query", "required": True, "schema": {"type": "string"}},
+        {"name": "to", "in": "query", "required": True, "schema": {"type": "string"}},
+        {"name": "bucket", "in": "query", "schema": {"type": "integer", "enum": [5, 10, 30, 60]}}]},
+    ("/api/clip/broadcasts/{streamId}/broadcast-info", "get"): {"params": [
+        {"name": "since", "in": "query", "schema": {"type": "string"}}]},
+}
+
+_TIME_FMT = "epoch ms(`1787529601000`) 또는 ISO-8601(`2026-09-26T12:00:00Z`). 🔴 `+09:00` 을 쓰면 `+` 를 `%2B` 로 인코딩한다."
+PARAMS["clip"].update({
+    ("/api/clip/broadcasts/{streamId}/recipes", "post"): {"streamId": "방송 번호. **본문의 `streamId` 와 같아야** 한다."},
+    ("/api/clip/broadcasts/{streamId}/recipes", "get"): {"streamId": "방송 번호."},
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "get"): {"streamId": "방송 번호.", "id": "편집본 번호(`RecipeSnapshot.id`)."},
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "put"): {"streamId": "방송 번호. **본문의 `streamId` 와 같아야** 한다.", "id": "고칠 편집본 번호."},
+    ("/api/clip/broadcasts/{streamId}/recipes/{recipeId}/renders", "post"): {
+        "streamId": "방송 번호.", "recipeId": "영상으로 만들 편집본 번호. **그 편집본의 지금 판**으로 만든다."},
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}", "get"): {"streamId": "방송 번호.", "clipId": "주문 응답의 `id`."},
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/file-access", "post"): {"streamId": "방송 번호.", "clipId": "완성된 영상 번호."},
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/uploads", "post"): {"streamId": "방송 번호.", "clipId": "올릴 완성 영상 번호."},
+    ("/api/clip/broadcasts/{streamId}/playback-access", "post"): {"streamId": "볼 방송 번호. 출입증은 **그 방송 하나**만 연다."},
+    ("/api/clip/library", "get"): {
+        "status": "상태로 거르기. `editing`·`rendering`·`rendered`·`failed`·`uploading`·`checking`·`uploaded` 중 하나. "
+                  "**소문자로만** 받는다. 안 주면 전부.",
+        "limit": "한 장 개수. 안 주면 **20**, 최대 **100**. 0 이하는 400.",
+        "cursor": "직전 응답의 `nextCursor` 를 **그대로**. 첫 장은 안 넣는다."},
+    ("/api/clip/library/{recipeId}", "get"): {"recipeId": "편집본 번호(목록 줄의 `recipeId`)."},
+    ("/api/clip/broadcasts/{streamId}/chat-messages", "get"): {
+        "streamId": "방송 번호.",
+        "from": "🔴 **필수.** 구간 시작(포함) — **화면 축**(영상 재생 위치의 절대시각). " + _TIME_FMT,
+        "to": "🔴 **필수.** 구간 끝(미포함). `from` 보다 커야 하고 폭은 **1시간** 까지.",
+        "limit": "한 장 개수. 안 주면 **200**, 최대 **500**(넘기면 잘라 준다). 0 이하는 400.",
+        "cursor": "직전 응답의 `nextCursor` 를 **그대로**.",
+        "kinds": "`chat`·`donation` 을 쉼표로. 안 주면 둘 다."},
+    ("/api/clip/broadcasts/{streamId}/chat-chart", "get"): {
+        "streamId": "방송 번호.",
+        "from": "🔴 **필수.** 구간 시작 — 화면 축. " + _TIME_FMT,
+        "to": "🔴 **필수.** 구간 끝(미포함). 폭 1시간까지.",
+        "bucket": "칸 크기(초). **5·10·30·60** 중 하나. 안 주면 **10**."},
+    ("/api/clip/broadcasts/{streamId}/broadcast-info", "get"): {
+        "streamId": "방송 번호.",
+        "since": "시청자 수 추이를 어디서부터 받을지. 안 주면 **지금부터 1시간 전**. " + _TIME_FMT},
+    ("/internal/broadcasts/{streamId}/chat-events", "post"): {"streamId": "방송 번호."},
+    ("/internal/jobs/{jobId}/events", "post"): {"jobId": "렌더 잡 번호(UUID). 주문서 봉투의 `jobId`."},
+    ("/internal/uploads/{uploadId}/start", "post"): {"uploadId": "업로드 주문 번호. 주문서 봉투에 실려 온다."},
+    ("/internal/uploads/{uploadId}/session", "post"): {"uploadId": "업로드 주문 번호."},
+    ("/internal/uploads/{uploadId}/result", "post"): {"uploadId": "업로드 주문 번호."},
+})
+
+OK_DESC["clip"].update({
+    ("/api/clip/broadcasts/{streamId}/recipes", "post", "201"): "저장됨. `recipeVersion` 1 로 시작한다.",
+    ("/api/clip/broadcasts/{streamId}/recipes", "get", "200"): "조회 성공. 없으면 빈 배열.",
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "get", "200"): "조회 성공.",
+    ("/api/clip/broadcasts/{streamId}/recipes/{id}", "put", "200"): "고쳐짐. `recipeVersion` 이 +1 됐다.",
+    ("/api/clip/broadcasts/{streamId}/recipes/{recipeId}/renders", "post", "201"):
+        "새 주문. **200 이면 같은 판의 주문이 이미 진행 중**이라 그것을 돌려준 것이다(둘 다 성공).",
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}", "get", "200"): "조회 성공.",
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/file-access", "post", "200"): "주소 발급. `expiresAt` 까지 유효하다.",
+    ("/api/clip/broadcasts/{streamId}/clips/{clipId}/uploads", "post", "201"):
+        "새 주문. **200 이면 같은 영상의 업로드가 이미 있어** 그것을 돌려준 것이다(둘 다 성공).",
+    ("/api/clip/broadcasts/{streamId}/playback-access", "post", "200"): "발급. **`Set-Cookie` 아홉 장이 본체다.**",
+    ("/api/clip/library", "get", "200"): "조회 성공. 없으면 빈 배열.",
+    ("/api/clip/library/{recipeId}", "get", "200"): "조회 성공.",
+    ("/api/clip/broadcasts/{streamId}/chat-messages", "get", "200"): "조회 성공. 수집 서버의 답 그대로다.",
+    ("/api/clip/broadcasts/{streamId}/chat-chart", "get", "200"): "조회 성공. 빈 칸도 0 으로 들어 있다.",
+    ("/api/clip/broadcasts/{streamId}/broadcast-info", "get", "200"): "조회 성공. 모르는 방송도 200(`latest: null`).",
+    ("/internal/broadcasts/live", "get", "200"): "조회 성공. 없으면 빈 배열.",
+    ("/internal/broadcasts/{streamId}/chat-events", "post", "200"): "받음. 보는 연결이 없으면 0/0.",
+    ("/internal/jobs/{jobId}/events", "post", "200"): "처리됨(또는 같은 보고의 재전송 — 그때 준 답 그대로).",
+    ("/internal/uploads/{uploadId}/start", "post", "200"): "잡음(또는 `proceed:false`).",
+    ("/internal/uploads/{uploadId}/session", "post", "200"): "기록됨. **돌려받은 `sessionUri` 로 올린다.**",
+    ("/internal/uploads/{uploadId}/result", "post", "200"): "받음.",
+})
+
+FIELDS["clip"].update({
+    "RecipeDocument": {
+        "_": "**계약6 레시피 JSON.** 편집기가 보내는 모양이자 돌려받는 모양이다. 칸 이름을 한 글자도 바꾸지 않는다"
+             "(편집기·렌더 일꾼과 셋이 같이 읽는다). 규칙은 저장 문의 본문 설명을 본다.",
+        "schemaVersion": "지금은 **1** 뿐이다.",
+        "streamId": "방송 번호. 주소의 방송과 같아야 한다.",
+        "cut": "잘라낼 구간. **`null` 이면 템플릿**(구간 없는 틀 — 영상 주문 불가).",
+        "outputs": "만들 영상 벌들(비율마다 하나). 하나 이상.",
+        "audio": "켤 트랙과 음량.",
+        "subtitles": "자막. `null` 이면 자막 없음."},
+    "Cut": {"_": "구간 `[inAtMs, outAtMs)` — **방송 절대시각 UTC epoch ms**. 길이 5~180초.",
+            "inAtMs": "시작(포함).", "outAtMs": "끝(미포함)."},
+    "Output": {"_": "영상 한 벌.",
+               "outputId": "벌 이름. `[a-z0-9-]{1,32}`, 한 편집본 안에서 유일. 완성 파일·업로드가 이 이름으로 가리킨다.",
+               "aspect": "`VERT_9_16`(쇼츠 세로) 또는 `SQUARE_1_1`. 같은 비율을 두 벌 못 만든다.",
+               "crop": "원본 화면에서 잘라낼 사각형."},
+    "Crop": {"_": "**정규화 좌표**(원본 화면 폭·높이를 1로 본 비율). 좌상단이 (0,0).",
+             "x": "왼쪽 끝 `[0,1)`.", "y": "위쪽 끝 `[0,1)`.",
+             "w": "폭. 0.05 이상, `x+w ≤ 1`.", "h": "높이. 0.05 이상, `y+h ≤ 1`."},
+    "Audio": {"_": "켤 오디오 트랙들.", "tracks": "하나 이상. `trackId` 0(믹스) 과 1~5(소스별)를 같이 못 넣는다."},
+    "Track": {"_": "트랙 하나.",
+              "trackId": "0 = 최종 믹스, 1~5 = OBS가 나눠 보낸 소스별 트랙(이름표는 auth 의 오디오 트랙 이름).",
+              "gain": "음량 배율 0.0~2.0. **1.0 이 원음**."},
+    "Subtitles": {"_": "자막.",
+                  "mode": "`BURN_AND_CC`(영상에 새기고 srt 도) · `BURN_ONLY` · `CC_ONLY`(srt 만).",
+                  "segments": "자막 줄들. 오름차순·겹침 금지. 빈 배열 허용."},
+    "Segment": {"_": "자막 한 줄. 구간 `[startAtMs, endAtMs)` 은 **방송 절대축**(컷 기준이 아니다).",
+                "startAtMs": "시작.", "endAtMs": "끝.", "text": "자막 글자."},
+    "RecipeSnapshot": {
+        "_": "저장된 편집본. `recipe` 는 계약6 JSON 그대로이고, 나머지는 서버가 붙인 칸이다.",
+        "id": "편집본 번호.", "streamId": "방송 번호.",
+        "creatorId": "처음 저장한 사람의 회원 번호(문자열). 고친 사람이 아니다.",
+        "recipeVersion": "판 번호. 저장하면 1, **고칠 때마다 +1**. 영상은 「몇 판으로 만들었나」를 이것으로 기억한다.",
+        "recipe": "편집본 본문(계약6).", "createdAt": "처음 저장한 시각.", "updatedAt": "마지막으로 고친 시각."},
+    "RecipeListResponse": {"_": "한 방송의 편집본 목록.", "recipes": "만든 순서(오래된 것 먼저)."},
+    "ClipSnapshot": {
+        "_": "주문한 영상 하나(「완성 영상 한 벌」). 주문 문·상태 보기·보관함이 같은 모양을 쓴다.",
+        "id": "영상 번호(`clipId`).", "streamId": "방송 번호.", "recipeId": "만든 편집본.",
+        "recipeVersion": "**주문 시점의 편집본 판.** 뒤에 편집본을 고쳐도 이 영상은 그 판 그대로다.",
+        "requestedBy": "주문한 사람의 회원 번호.",
+        "status": "`queued`(줄 서는 중) · `rendering`(만드는 중) · `rendered`(완성) · `failed`.",
+        "progress": "진행. 주문만 됐으면 0.",
+        "outputs": "완성이면 산출물 목록(칸마다 `outputId`·`kind`(`video`|`srt`)·`s3Key`), 아니면 `null`. "
+                   "🔴 **`s3Key` 로는 파일을 못 받는다**(창고 비공개) — `…/file-access` 로 주소를 받는다.",
+        "error": "실패 사유. 성공이면 `null`.",
+        "createdAt": "주문 시각.", "updatedAt": "마지막 상태 변경.",
+        "upload": "가장 최근 유튜브 업로드. 안 올렸으면 `null`."},
+    "ClipProgress": {"_": "렌더 일꾼이 마지막으로 보고한 진행.",
+                     "percent": "0~100. **다시 시도하면 0으로 돌아간다.**",
+                     "stage": "일꾼이 붙인 단계 이름(표시용).",
+                     "attempt": "몇 번째 시도인가(1부터). 3이 마지막.",
+                     "jobId": "렌더 잡 번호. 진단용."},
+    "ClipError": {"_": "영상 만들기 실패 사유(계약1).", "code": "사유 코드.", "message": "사람이 읽을 설명."},
+    "ClipFileAccess": {"_": "완성 영상 파일 주소들. **주소 하나가 곧 출입증**이다.",
+                       "clipId": "영상 번호.", "expiresAt": "주소 만료 시각(발급 후 60분).",
+                       "files": "파일들. 일꾼이 보고한 순서 그대로."},
+    "File": {"_": "파일 하나.", "outputId": "어느 벌의 파일인가.", "kind": "`video` 또는 `srt`(자막).",
+             "fileName": "내려받을 때 이름.",
+             "url": "미리서명 주소. `<video src>` 로 재생, `<a href>` 로 내려받기. 만료되면 다시 발급받는다."},
+    "UploadRequest": {"_": "업로드 주문 본문. **본문 없이 불러도 된다**(제목이 필수라 400이 나지만).",
+                      "title": "🔴 **필수.** 유튜브 제목. 앞뒤 공백을 걷고 1~100자, `<`·`>` 금지.",
+                      "description": "유튜브 설명. 5000바이트까지, `<`·`>` 금지. 없으면 빈 설명.",
+                      "outputId": "올릴 벌. **영상 벌이 하나면 생략 가능**, 여럿이면 필수."},
+    "UploadSnapshot": {
+        "_": "업로드 한 줄. 🔴 이어 올리기 주소는 **싣지 않는다** — 그 주소 자체가 올리기 권한이다.",
+        "id": "업로드 번호.", "clipId": "올린 영상.", "outputId": "올린 벌.", "title": "유튜브 제목.",
+        "status": "`queued` · `uploading` · `uploaded` · `failed`(채널에 없음이 확실 — 다시 주문 가능) · "
+                  "🔴 `checking`(올라갔는지 모름 — **사람이 채널에서 확인**. 자동으로 다시 안 올린다).",
+        "videoId": "올렸을 때만. 주소는 `https://youtu.be/{videoId}`.",
+        "error": "실패 사유. 아니면 `null`.", "requestedBy": "주문한 사람. 채널 주인(스트리머)과 다를 수 있다.",
+        "createdAt": "주문 시각.", "updatedAt": "마지막 상태 변경."},
+    "UploadError": {"_": "업로드 실패 사유.", "code": "사유 코드(예: 한도 초과 `QUOTA_EXCEEDED`).", "message": "설명."},
+    "SessionBody": {"_": "이어 올리기 주소 기록 본문.", "sessionUri": "유튜브가 준 이어 올리기 주소."},
+    "ResultBody": {"_": "끝 보고 본문.", "outcome": "`UPLOADED` · `FAILED` · `CHECKING`.",
+                   "videoId": "UPLOADED 면 필수.", "errorCode": "실패 사유 코드.", "errorMessage": "실패 설명. 주소 모양 글자는 서버가 지운다."},
+    "LibraryEntry": {
+        "_": "보관함 한 줄 = 편집본 하나 + 원본 방송 요약 + 가장 최근 영상. 편집본 본문은 없다(상세에서 준다).",
+        "recipeId": "편집본 번호.", "streamId": "원본 방송.", "creatorId": "만든 사람.",
+        "recipeVersion": "편집본의 지금 판.", "cut": "구간. 템플릿이면 `null`.",
+        "status": "**파생 상태**(어느 표의 칸도 아니다): `editing`(지금 판으로 만든 영상 없음) · `rendering` · "
+                  "`rendered`(완성 — 화면의 「업로드 대기」) · `failed` · `uploading` · `checking` · `uploaded`. "
+                  "업로드가 `failed` 면 `rendered` 로 돌아간다(다시 올릴 수 있다).",
+        "broadcast": "원본 방송 요약.",
+        "latestClip": "가장 최근 만든 영상. 🔴 그 `recipeVersion` 이 이 줄의 것과 **다를 수 있다** — 그때 상태가 `editing` 이다. "
+                      "안 만들었으면 `null`.",
+        "createdAt": "편집본을 처음 저장한 시각.", "updatedAt": "편집본을 마지막으로 고친 시각."},
+    "LibraryDetail": {
+        "_": "보관함 상세 — 목록 줄의 칸 전부 + `recipe`.",
+        "recipeId": "편집본 번호.", "streamId": "원본 방송.", "creatorId": "만든 사람.",
+        "recipeVersion": "지금 판.", "cut": "구간.", "status": "목록 줄과 같은 파생 상태.",
+        "broadcast": "원본 방송 요약.", "latestClip": "가장 최근 영상.",
+        "createdAt": "처음 저장.", "updatedAt": "마지막 수정.", "recipe": "편집본 본문(계약6)."},
+    "BroadcastSummary": {"_": "원본 방송 요약. 방송 목록 줄과 칸 이름이 같다.",
+                         "status": "`live` · `ended` · `vod_ready`.", "startedAt": "시작. `null` 일 수 있다.",
+                         "endedAt": "종료.",
+                         "vodExpiresAt": "원본 다시보기 만료 시각 — 화면의 「원본 만료 D-day」 재료."},
+    "LibraryListResponse": {"_": "보관함 한 장.", "items": "새 편집본이 먼저.",
+                            "nextCursor": "다음 장 표시. 그대로 되돌려 넣는다. 마지막 장이면 `null`."},
+    "LiveBroadcastsResponse": {"_": "방송 중 목록(수집 서버용).", "broadcasts": "`live` 인 방송들.",
+                               "truncated": "500 줄을 넘어 잘렸으면 `true` — 명부 이상 신호."},
+    "LiveBroadcastsItem": {"_": "방송 중 한 줄.", "streamId": "방송 번호.",
+                           "streamerId": "스트리머 회원 번호 — **문자열**이다(명부 칸이 문자열이라서).",
+                           "startedAt": "방송 시작. 운영 경로로는 `null` 이 안 나오지만 오면 지우지 않고 `null` 로 싣는다."},
+})
+
+SCHEMA_ALIAS["clip"] = {"Progress": "ClipProgress"}
+
+TAGS["clip"][1:1] = [
+    {"name": "편집본", "description": "편집 화면의 저장 단위(「레시피」). 영상 파일이 아니라 **영상을 어떻게 만들지 적은 설계도**다 — "
+                                    "구간·화면 비율·오디오·자막. 계약6 JSON 그대로 주고받는다."},
+    {"name": "영상 만들기·보관함", "description": "편집본으로 영상을 주문하고, 상태를 보고, 완성 파일 주소를 받는다. "
+                                         "보관함은 여러 방송에 걸친 편집본·영상을 한데 모은 목록이다."},
+    {"name": "유튜브 업로드", "description": "완성 영상을 스트리머 채널에 비공개로 올린다. **두 번 눌러도 영상은 하나다.**"},
+    {"name": "방송 영상 재생", "description": "라이브·되감기·다시보기를 CDN에서 받게 하는 출입증(서명 쿠키)."},
+    {"name": "되감기 채팅", "description": "되감기 화면의 채팅 목록·채팅량 차트·방송 정보. clip 이 자격만 보고 수집 서버 답을 그대로 넘긴다."},
+]
+
+
+# ═══════════════════════════ 2026-09 추가분 — chat-collector ═══════════════════════════
+# POK-234 범위 창구 셋. clip 의 되감기 채팅 문 셋이 이것을 그대로 중계한다.
+
+_COL_TIME = "epoch ms 또는 ISO-8601. `+09:00` 은 `+` 를 `%2B` 로 인코딩한다."
+_COL_400 = lambda reasons, ex: {
+    "description": "요청 값이 잘못됐다. 본문 `{\"error\": 사유}` — " + reasons,
+    "content": {"application/json": {"example": {"error": ex}}}}
+_COL_401 = {"description": "X-Internal-Token 헤더가 없거나 값이 틀리다."}
+
+OPS["chat-collector"].update({
+    ("/internal/streams/{streamId}/chat-messages", "get"): (
+        "채팅·후원 목록 (내부 전용)",
+        "**한 구간의 채팅과 후원을 한 목록에 섞어** 준다. 부르는 쪽은 clip 이고 **자격 판정은 clip 이 한다.**\n\n"
+        "🔴 **시각이 두 축이다.** `from`·`to` 는 **화면 축**(영상 재생 위치의 절대시각)으로 받고, 표를 찾을 때 여기에 "
+        "보정값(`appliedOffsetMs`)을 더한다. 응답 줄의 `time` 은 **표에 찍힌 원본 시각**이라, 화면 위치는 "
+        "`time − appliedOffsetMs` 다.\n\n"
+        "**DB 가 죽으면 500 을 그대로 낸다** — 빈 목록으로 삼키면 「그 구간에 채팅이 없었다」로 읽힌다.",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": _COL_400("`missing` · `unreadable` · `out_of_range` · `inverted` · `too_wide`(1시간 초과) · "
+                         "`limit` · `kinds` · `cursor`.", "inverted"),
+         "401": _COL_401},
+    ),
+    ("/internal/streams/{streamId}/chat-chart", "get"): (
+        "채팅량 차트 (내부 전용)",
+        "구간을 `bucket` 초로 잘라 칸마다 채팅 수·후원 수를 센다. **빈 칸도 0 으로 들어 있다.** "
+        "시각 규칙은 목록 창구와 같다.",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": _COL_400("`missing` · `unreadable` · `out_of_range` · `inverted` · `too_wide` · "
+                         "`bucket`(5·10·30·60 아님) · `too_many_buckets`(720 초과).", "bucket"),
+         "401": _COL_401},
+    ),
+    ("/internal/streams/{streamId}/broadcast-info", "get"): (
+        "방송 정보 (내부 전용)",
+        "1분마다 관측한 **제목·태그·카테고리·시청자 수.** `latest` 는 가장 최근 관측(구간과 무관), `series` 는 "
+        "`since` 부터의 시청자 수 점(최대 720).\n\n"
+        "**모르는 방송도 200** — `latest: null`, `series: []`. 방송 직후에는 늘 관측 전이라 404 로 가르면 안 된다.",
+        [{"internalToken": []}], "내부 (서버 간 연동)",
+        {"400": _COL_400("`since` 형식(`unreadable`·`out_of_range`).", "unreadable"), "401": _COL_401},
+    ),
+})
+
+OK_DESC["chat-collector"].update({
+    ("/internal/streams/{streamId}/chat-messages", "get", "200"): "조회 성공. 없으면 빈 배열.",
+    ("/internal/streams/{streamId}/chat-chart", "get", "200"): "조회 성공.",
+    ("/internal/streams/{streamId}/broadcast-info", "get", "200"): "조회 성공. 모르는 방송도 200.",
+})
+
+PARAMS["chat-collector"].update({
+    ("/internal/streams/{streamId}/chat-messages", "get"): {
+        "streamId": "방송 번호.",
+        "from": "🔴 **필수.** 구간 시작(포함) — 화면 축. " + _COL_TIME,
+        "to": "🔴 **필수.** 구간 끝(미포함). 폭 1시간까지.",
+        "limit": "안 주면 200, 최대 500(넘기면 잘라 준다). 0 이하·숫자 아님은 400.",
+        "cursor": "직전 응답의 `nextCursor` 그대로.",
+        "kinds": "`chat`·`donation` 을 쉼표로. 안 주면 둘 다.",
+        "channelId": "보정값을 고르는 채널. **clip 은 넘기지 않는다**(브라우저가 정하게 두지 않으려고) — 없으면 세션 정보에서 찾는다."},
+    ("/internal/streams/{streamId}/chat-chart", "get"): {
+        "streamId": "방송 번호.",
+        "from": "🔴 **필수.** 구간 시작 — 화면 축. " + _COL_TIME,
+        "to": "🔴 **필수.** 구간 끝(미포함).",
+        "bucket": "칸 크기(초) 5·10·30·60. 안 주면 10.",
+        "channelId": "목록 창구와 같다. clip 은 넘기지 않는다."},
+    ("/internal/streams/{streamId}/broadcast-info", "get"): {
+        "streamId": "방송 번호.",
+        "since": "추이를 어디서부터. 안 주면 지금부터 1시간 전. " + _COL_TIME},
+})
+
+FIELDS["chat-collector"].update({
+    "ChatWindowPage": {"_": "채팅·후원 목록 한 장.", "items": "시각 순.",
+                       "nextCursor": "다음 장 표시. **마지막 장이면 `null`**(빈 문자열이 아니다).",
+                       "appliedOffsetMs": "이 답에 실제로 쓴 보정값(ms). 화면 위치 = `time − appliedOffsetMs`. 늘 실린다."},
+    "ChatWindowItem": {
+        "_": "한 줄. 채팅과 후원이 섞여 나가므로 칸이 합집합이다(해당 없는 칸은 `null`).",
+        "kind": "`chat` 또는 `donation`.",
+        "id": "그 표의 번호 — 채팅과 후원이 **각자 1부터** 센다. `kind` 와 짝지어야 유일하다. "
+              "🔴 SSE 로 오는 `seq` 와 **다른 번호**다.",
+        "time": "**표에 찍힌 원본 시각.** 화면 위치는 `time − appliedOffsetMs`.",
+        "timeBasis": "`message`(치지직이 찍은 시각) 또는 `received`(우리 서버가 받은 시각). "
+                     "**후원은 치지직이 시각을 안 줘서 늘 `received`** — 채팅 사이에 몇 초 어긋나 끼일 수 있다.",
+        "nickname": "보낸 사람 닉네임. 옛 줄(닉네임 저장 전)은 `null`.",
+        "senderChannelId": "보낸 사람의 치지직 채널 번호.",
+        "role": "치지직 역할 코드. 치지직이 안 보내는 경우가 많아 `null` 일 수 있다.",
+        "text": "채팅 글자 또는 후원 메시지.",
+        "amount": "후원 금액(원). 채팅이거나 숫자로 못 읽으면 `null`.",
+        "donationType": "후원 종류. 채팅이면 `null`."},
+    "ChatChartPage": {"_": "채팅량 차트 한 장.", "bucketSeconds": "칸 크기(초).",
+                      "buckets": "칸들. 빈 칸도 0 으로 들어 있다.",
+                      "appliedOffsetMs": "목록 창구와 같은 뜻."},
+    "ChartBucket": {"_": "칸 하나.", "start": "칸 시작 — **표 축**이다. 화면 위치는 `start − appliedOffsetMs`.",
+                    "chats": "채팅 수.", "donations": "후원 수."},
+    "BroadcastInfoResponse": {"_": "방송 정보.", "latest": "가장 최근 관측. 없으면 `null`. `since` 와 무관하다.",
+                              "series": "`since` 부터의 시청자 수 점들(최대 720)."},
+    "Latest": {"_": "가장 최근에 관측한 방송 정보.", "title": "방송 제목.", "tags": "방송 태그들.",
+               "category": "카테고리(게임 등).", "viewers": "그때 시청자 수.", "observedAt": "관측 시각."},
+    "Point": {"_": "시청자 수 점 하나.", "observedAt": "관측 시각.", "viewers": "시청자 수. 못 읽었으면 `null`."},
+})
+
+SCHEMA_ALIAS["chat-collector"] = {"Response": "BroadcastInfoResponse"}
 
 
 # 프레임워크 내부 타입이 스키마로 새어 나오는 자리들. 그대로 두면 Jackson의 JsonNode가
@@ -1182,9 +1927,33 @@ def shorten_schema_names(doc):
             continue
         for fq in fqs:
             parts = fq.split(".")
-            # com.pokeclip.auth.chzzk.api.dto.LinkRequest → 'chzzk'
-            hint = parts[parts.index("api") - 1] if "api" in parts else ""
-            rename[fq] = (hint[:1].upper() + hint[1:] + simple) if hint else simple
+            outer = parts[-2]
+            if outer[:1].isupper():
+                # 중첩 record다(ClipSnapshot.Error · LiveBroadcastsResponse.Item). 바깥 클래스 이름으로 가른다 —
+                # 패키지로 가르면 **같은 패키지의 두 바깥 클래스**가 같은 이름이 된다(아래 🔴).
+                base = outer
+                for suffix in ("Response", "Snapshot"):
+                    if base.endswith(suffix) and base != suffix:
+                        base = base[: -len(suffix)]
+                        break
+                rename[fq] = base + simple
+            else:
+                # com.pokeclip.auth.chzzk.api.dto.LinkRequest → 'chzzk'
+                hint = parts[parts.index("api") - 1] if "api" in parts else ""
+                rename[fq] = (hint[:1].upper() + hint[1:] + simple) if hint else simple
+
+    # 🔴 줄인 이름이 겹치면 아래 dict 가 한쪽을 **조용히 덮어쓴다.** 2026-09-26 에 실제로 그랬다 —
+    # 방송 목록의 Item 과 방송 중 목록의 Item 이 둘 다 broadcast/api 에 있어 패키지 힌트가 같았고,
+    # 둘 다 BroadcastItem 이 되어 /internal/broadcasts/live 문서가 **남의 칸 여섯**을 보여 줬다.
+    # ClipSnapshot.Error 와 UploadSnapshot.Error 도 둘 다 Error 가 됐다(패키지에 api 가 없어 힌트가 비었다).
+    # 08-25 의 EXPIRED 사라짐과 같은 병이 「줄이는 단계」에서 다시 난 것이라, 여기서는 **죽인다** —
+    # 틀린 문서를 조용히 내보내는 것보다 배포가 멈추는 편이 낫다.
+    seen = {}
+    for fq, short in rename.items():
+        if short in seen:
+            raise SystemExit(f"스키마 이름 충돌: {seen[short]} 과 {fq} 가 둘 다 {short} 가 된다 — "
+                             "shorten_schema_names 의 가르는 규칙을 고친다")
+        seen[short] = fq
 
     # 이름만 바꾸면 $ref가 끊긴다. 문서 전체를 문자열로 치환한다 —
     # 긴 이름부터 바꿔야 짧은 이름이 긴 이름의 일부를 먼저 먹지 않는다.
@@ -1266,7 +2035,34 @@ def report_unmatched(doc, server):
     return lost
 
 
+def apply_fixes(doc, server):
+    schemas = doc.setdefault("components", {}).setdefault("schemas", {})
+    for old, new in SCHEMA_ALIAS.get(server, {}).items():
+        if old in schemas and new not in schemas:
+            text = json.dumps(doc, ensure_ascii=False).replace(
+                f'"#/components/schemas/{old}"', f'"#/components/schemas/{new}"')
+            doc.clear(); doc.update(json.loads(text))
+            doc["components"]["schemas"][new] = doc["components"]["schemas"].pop(old)
+    for (path, method), fix in OP_FIX.get(server, {}).items():
+        op = doc.get("paths", {}).get(path, {}).get(method)
+        if op is None:
+            continue
+        if "body" in fix:
+            op["requestBody"] = fix["body"]
+        if "params" in fix:
+            keep = [p for p in op.get("parameters", []) if p.get("in") == "path"]
+            op["parameters"] = keep + fix["params"]
+        responses = op.setdefault("responses", {})
+        if "ok" in fix and "200" in responses:
+            responses["200"]["content"] = {"application/json": {"schema": fix["ok"]}}
+        if "status" in fix:
+            frm, to = fix["status"]
+            if frm in responses and to not in responses:
+                responses[to] = responses.pop(frm)
+
+
 def enrich(doc, server):
+    apply_fixes(doc, server)
     schemes = {}
     # 사람 토큰을 쓰는 문이 하나라도 있으면 bearerAuth를 싣는다.
     if any(not p.startswith("/internal") for p in doc.get("paths", {})):
@@ -1343,6 +2139,8 @@ def main():
     doc.pop("servers", None)
 
     enrich(doc, server)
+    # apply_fixes 가 'query' 뭉치를 걷어내면 그것만 가리키던 스키마(String{all,empty})가 고아로 남는다
+    gc_schemas(doc)
     report_unmatched(doc, server)
 
     with open(path, "w") as f:
